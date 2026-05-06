@@ -43,4 +43,24 @@ fi
 # Opportunistic GC: prune session-cache entries older than 7 days
 find "$CACHE_DIR" -type f -mtime +7 -delete 2>/dev/null || true
 
+# Clear stale inflight markers for this session. By definition, this
+# CC process is *just starting*; any inflight in this session's
+# TOPIC_DIR was written by a previous CC process whose subagents have
+# died with it. Safe to nuke unconditionally — sibling CC sessions
+# have their own TOPIC_DIRs, never this one's.
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB="$(dirname "$HOOK_DIR")/scripts/lib.sh"
+if [[ -f "$LIB" ]]; then
+  (
+    set +e
+    # shellcheck disable=SC1090
+    source "$LIB"
+    DESIRED_SESSION="$SID"
+    if resolve_state >/dev/null 2>&1; then
+      resolve_workflow_dir_from_state >/dev/null 2>&1
+      [[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.inflight"
+    fi
+  ) || true
+fi
+
 exit 0

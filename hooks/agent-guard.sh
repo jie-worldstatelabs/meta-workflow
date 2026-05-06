@@ -42,6 +42,30 @@ if ! config_is_stage "$STATUS"; then
   exit 0
 fi
 
+# Deny duplicate launch: if a workflow subagent for this stage+epoch
+# is already in flight (post-agent.sh wrote a marker, subagent hasn't
+# stopped yet), refuse this Agent call. Without this, a stop-hook
+# false-positive (which we also fix in stop-hook.sh) or any other path
+# that prods the main agent into another launch would otherwise
+# produce two concurrent subagents writing to the same project.
+#
+# Filter: only deny when the launch target IS the stagent workflow
+# subagent. Other Agent calls (unrelated skills, user-driven Task
+# delegations) must pass through even while our workflow has an
+# in-flight subagent.
+INCOMING_SUBAGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.tool_input.subagent_type // ""' 2>/dev/null || true)
+INFLIGHT_FILE="${TOPIC_DIR}/.inflight/${STATUS}-${EPOCH}.json"
+if [[ "$INCOMING_SUBAGENT_TYPE" == "stagent:workflow-subagent" ]] && [[ -f "$INFLIGHT_FILE" ]]; then
+  EXISTING_AGENT=$(jq -r '.agent_id // ""' "$INFLIGHT_FILE" 2>/dev/null || true)
+  jq -n \
+    --arg reason "[stagent] Refusing to launch a second subagent for stage '$STATUS' (epoch $EPOCH) — one is already in flight (agent_id: ${EXISTING_AGENT:-unknown}). Wait for it to complete; do not stop, the completion notification will arrive. To abort, run /stagent:interrupt or /stagent:cancel." \
+    '{
+      "decision": "block",
+      "reason": $reason
+    }'
+  exit 0
+fi
+
 ARTIFACT="$(config_artifact_path "$STATUS" "$RUN_DIR_NAME" "$PROJECT_ROOT")"
 EXEC_TYPE="$(config_execution_type "$STATUS")"
 TRANSITION_KEYS="$(config_transition_keys "$STATUS")"

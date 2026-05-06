@@ -50,6 +50,28 @@ if is_terminal_status "$STATUS"; then
   exit 1
 fi
 
+# Surface in-flight subagent ids so the slash command can TaskStop them
+# before completing the interrupt. Without this, the orphan subagent
+# keeps running, may write a post-interrupt report, and confuses the
+# next /stagent:continue (which sees a "fresh" report and auto-advances).
+INFLIGHT_DIR="${TOPIC_DIR}/.inflight"
+INFLIGHT_AGENT_IDS=""
+if [[ -d "$INFLIGHT_DIR" ]]; then
+  for f in "$INFLIGHT_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    aid=$(jq -r '.agent_id // ""' "$f" 2>/dev/null || true)
+    [[ -n "$aid" ]] && [[ "$aid" != "null" ]] && INFLIGHT_AGENT_IDS+="${INFLIGHT_AGENT_IDS:+ }$aid"
+  done
+fi
+if [[ -n "$INFLIGHT_AGENT_IDS" ]]; then
+  echo "STAGENT_STOP_AGENT_IDS: $INFLIGHT_AGENT_IDS"
+fi
+# Hard cleanup — even if the slash command's TaskStop step is skipped,
+# the inflight markers must not survive interrupt; otherwise stop-hook
+# on the next /stagent:continue would see them and assume something
+# is still running.
+rm -rf "$INFLIGHT_DIR" 2>/dev/null || true
+
 # Save current status as resume_status, then set interrupted.
 set_fm_field "$STATE_FILE" resume_status "$STATUS"
 set_fm_field "$STATE_FILE" status interrupted

@@ -311,6 +311,26 @@ Then continue the workflow (either do the next stage's work or, if the new statu
 DO NOT STOP. The loop is infinite — only /stagent:interrupt or /stagent:cancel stops it."
   fi
 else
+  # ──────────────────────────────────────────────────────────────
+  # In-flight check (state 2): the main agent already launched a
+  # workflow subagent for this stage+epoch and is now idle waiting
+  # for the async completion notification. Allow the stop cleanly
+  # rather than blocking — blocking here is what produces the
+  # spurious double-launch race.
+  #
+  # post-agent.sh writes the marker; SubagentStop / update-status /
+  # /stagent:interrupt|cancel / /stagent:continue / SessionStart
+  # remove it.
+  # ──────────────────────────────────────────────────────────────
+  INFLIGHT_FILE="${TOPIC_DIR}/.inflight/${STATUS}-${EPOCH}.json"
+  if [[ -f "$INFLIGHT_FILE" ]]; then
+    EXISTING_AGENT=$(jq -r '.agent_id // ""' "$INFLIGHT_FILE" 2>/dev/null || true)
+    SYSTEM_MSG="🔄 Dev workflow | Phase: $STATUS (epoch $EPOCH) | subagent in flight${EXISTING_AGENT:+ (agent_id: $EXISTING_AGENT)} — waiting for completion"
+    [[ -n "$SYNC_WARNINGS" ]] && SYSTEM_MSG="${SYSTEM_MSG}  |  sync warnings: ${SYNC_WARNINGS}"
+    jq -n --arg msg "$SYSTEM_MSG" '{"systemMessage": $msg}'
+    exit 0
+  fi
+
   if [[ ! -f "$ARTIFACT" ]]; then
     REASON="$ARTIFACT does not exist"
   elif [[ "$ARTIFACT_EPOCH" != "$EPOCH" ]]; then
