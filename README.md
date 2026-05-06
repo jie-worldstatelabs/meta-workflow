@@ -12,24 +12,23 @@ Two modes:
 
 ### Installation
 
-Run these slash commands **inside a Claude Code session**. 
+Run this command 
 
 ```
-/plugin marketplace add jie-worldstatelabs/stagent
-/plugin install stagent@stagent
+claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin install stagent@stagent
 ```
 
 Already installed? Update with:
 
 ```
-/plugin update stagent@stagent
+claude plugin update stagent@stagent
 ```
 
 Requires: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (cloud mode also relies on standard POSIX tools like `sha256sum` / `shasum`).
 
 ### Run a workflow
 
-**Optional but recommended:** sign in first to claim session ownership and better manage your past sessions.
+Optional but recommended: sign in first to claim session ownership and better manage your past sessions.
 
 ```
 /stagent:login
