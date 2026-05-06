@@ -12,24 +12,23 @@ Dos modos:
 
 ### Instalación
 
-Ejecuta estos slash commands **dentro de una sesión de Claude Code**. El modo cloud está activado por defecto — sin configuración ni claves; las sesiones anónimas funcionan para `/stagent:start` y `/stagent:continue`. Solo necesitas una cuenta (`/stagent:login`) para publicar workflows en el hub o reclamar propiedad autenticada.
+Ejecuta este comando en tu terminal. El modo cloud está activado por defecto — sin configuración ni claves; las sesiones anónimas funcionan para `/stagent:start` y `/stagent:continue`. Solo necesitas una cuenta (`/stagent:login`) para publicar workflows en el hub o reclamar propiedad autenticada.
 
 ```
-/plugin marketplace add jie-worldstatelabs/stagent
-/plugin install stagent@stagent
+claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin install stagent@stagent
 ```
 
 ¿Ya está instalado? Actualízalo con:
 
 ```
-/plugin update stagent@stagent
+claude plugin update stagent@stagent
 ```
 
 Requiere: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (el modo cloud también se apoya en utilidades POSIX estándar como `sha256sum` / `shasum`).
 
 ### Ejecutar un workflow
 
-**Opcional pero recomendado:** inicia sesión primero para reclamar la propiedad de la sesión y gestionar mejor tus sesiones pasadas.
+Opcional pero recomendado: inicia sesión primero para reclamar la propiedad de la sesión y gestionar mejor tus sesiones pasadas.
 
 ```
 /stagent:login

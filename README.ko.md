@@ -12,24 +12,23 @@
 
 ### 설치
 
-다음 슬래시 명령을 **Claude Code 세션 안에서** 실행하세요. Cloud 모드는 기본으로 켜져 있어 — 설정이나 키가 필요 없고, 익명 세션에서 `/stagent:start`와 `/stagent:continue`가 동작합니다. 워크플로우를 hub에 publish하거나 인증된 소유권을 주장할 때만 계정(`/stagent:login`)이 필요합니다.
+터미널에서 다음 명령을 실행하세요. Cloud 모드는 기본으로 켜져 있어 — 설정이나 키가 필요 없고, 익명 세션에서 `/stagent:start`와 `/stagent:continue`가 동작합니다. 워크플로우를 hub에 publish하거나 인증된 소유권을 주장할 때만 계정(`/stagent:login`)이 필요합니다.
 
 ```
-/plugin marketplace add jie-worldstatelabs/stagent
-/plugin install stagent@stagent
+claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin install stagent@stagent
 ```
 
 이미 설치되어 있나요? 업데이트:
 
 ```
-/plugin update stagent@stagent
+claude plugin update stagent@stagent
 ```
 
 필요 항목: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (cloud 모드는 `sha256sum` / `shasum` 같은 표준 POSIX 도구도 사용).
 
 ### 워크플로우 실행하기
 
-**선택 사항이지만 권장:** session 의 ownership 을 claim 하고 지난 session 들을 더 잘 관리하려면 먼저 로그인하세요.
+선택 사항이지만 권장: session 의 ownership 을 claim 하고 지난 session 들을 더 잘 관리하려면 먼저 로그인하세요.
 
 ```
 /stagent:login

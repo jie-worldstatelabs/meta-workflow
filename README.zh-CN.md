@@ -12,24 +12,23 @@
 
 ### 安装
 
-在 **Claude Code session 里**运行下面的 slash 命令。Cloud 模式默认启用 —— 不用配置、不用 key；匿名 session 就能用 `/stagent:start` 和 `/stagent:continue`。只有发布 workflow 到 hub 或者要登记认证所有权时才需要 `/stagent:login`。
+在终端里跑这条命令。Cloud 模式默认启用 —— 不用配置、不用 key；匿名 session 就能用 `/stagent:start` 和 `/stagent:continue`。只有发布 workflow 到 hub 或者要登记认证所有权时才需要 `/stagent:login`。
 
 ```
-/plugin marketplace add jie-worldstatelabs/stagent
-/plugin install stagent@stagent
+claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin install stagent@stagent
 ```
 
 已经安装过？更新插件：
 
 ```
-/plugin update stagent@stagent
+claude plugin update stagent@stagent
 ```
 
 依赖：[Claude Code](https://claude.ai/claude-code)、`jq`、`curl`、`git`（cloud 模式还会用到 `sha256sum` / `shasum` 这类 POSIX 工具）。
 
 ### 跑一个 workflow
 
-**可选但推荐：** 先登录，claim session 所有权、更好管理你过去的 sessions。
+可选但推荐：先登录，claim session 所有权、更好管理你过去的 sessions。
 
 ```
 /stagent:login

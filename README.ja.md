@@ -12,24 +12,23 @@
 
 ### インストール
 
-以下のスラッシュコマンドを **Claude Code セッション内** で実行してください。Cloud モードはデフォルトで有効 — 設定や鍵は不要で、`/stagent:start` と `/stagent:continue` は匿名セッションで動きます。アカウント（`/stagent:login`）が必要なのは、ワークフローを hub に publish するときと、認証済みオーナーシップを主張するときだけです。
+ターミナルで以下のコマンドを実行してください。Cloud モードはデフォルトで有効 — 設定や鍵は不要で、`/stagent:start` と `/stagent:continue` は匿名セッションで動きます。アカウント（`/stagent:login`）が必要なのは、ワークフローを hub に publish するときと、認証済みオーナーシップを主張するときだけです。
 
 ```
-/plugin marketplace add jie-worldstatelabs/stagent
-/plugin install stagent@stagent
+claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin install stagent@stagent
 ```
 
 すでにインストール済みなら、更新：
 
 ```
-/plugin update stagent@stagent
+claude plugin update stagent@stagent
 ```
 
 必須：[Claude Code](https://claude.ai/claude-code)、`jq`、`curl`、`git`（cloud モードは `sha256sum` / `shasum` のような標準 POSIX ツールにも依存）。
 
 ### ワークフローを実行する
 
-**オプションですが推奨：** session の所有権を主張し、過去の session をより良く管理するため、先にサインインしてください。
+オプションですが推奨：session の所有権を主張し、過去の session をより良く管理するため、先にサインインしてください。
 
 ```
 /stagent:login
