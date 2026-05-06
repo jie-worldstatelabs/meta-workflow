@@ -19,9 +19,21 @@
 /plugin install stagent@stagent
 ```
 
+すでにインストール済みなら、更新：
+
+```
+/plugin update stagent@stagent
+```
+
 必須：[Claude Code](https://claude.ai/claude-code)、`jq`、`curl`、`git`（cloud モードは `sha256sum` / `shasum` のような標準 POSIX ツールにも依存）。
 
 ### ワークフローを実行する
+
+**オプションですが推奨：** session の所有権を主張し、過去の session をより良く管理するため、先にサインインしてください。
+
+```
+/stagent:login
+```
 
 デフォルトの開発ワークフローを起動します — あなたの説明どおりに構築します：
 
@@ -29,7 +41,7 @@
 /stagent:start --flow=cloud://demo "Build a journaling app with MBTI insights inferred from journal entries"
 ```
 
-skill がライブ UI の URL を出力します。サインインしていない場合、これは **匿名で誰でも閲覧できる** session URL となり、リンクを持つ誰もがステートマシンの実行をリアルタイムで追えます（ステージタイムライン、レンダリング済み artifact、`git diff baseline..HEAD` が SSE 経由でライブ更新）。所有者は存在しません。session の所有権を主張し、過去の session をより良く管理したい場合は、`/stagent:start` の前に `/stagent:login` を実行してください。
+skill がライブ UI の URL を出力します。サインインしていない場合、これは **匿名で誰でも閲覧できる** session URL となり、リンクを持つ誰もがステートマシンの実行をリアルタイムで追えます（ステージタイムライン、レンダリング済み artifact、`git diff baseline..HEAD` が SSE 経由でライブ更新）。所有者は存在しません。
 
 完全オフラインで実行したい場合は local モードに切り替えてください：
 

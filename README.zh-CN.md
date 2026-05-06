@@ -19,9 +19,21 @@
 /plugin install stagent@stagent
 ```
 
+已经安装过？更新插件：
+
+```
+/plugin update stagent@stagent
+```
+
 依赖：[Claude Code](https://claude.ai/claude-code)、`jq`、`curl`、`git`（cloud 模式还会用到 `sha256sum` / `shasum` 这类 POSIX 工具）。
 
 ### 跑一个 workflow
+
+**可选但推荐：** 先登录，claim session 所有权、更好管理你过去的 sessions。
+
+```
+/stagent:login
+```
 
 启动默认开发 workflow —— 它会照你的描述构建：
 
@@ -29,7 +41,7 @@
 /stagent:start --flow=cloud://demo "Build a journaling app with MBTI insights inferred from journal entries"
 ```
 
-skill 会打印一个实时 UI 链接。**未登录**时这是一个**匿名、任何人凭链接都能查看**的 session —— 拿到链接的人都能实时跟踪状态机运行（stage 时间线、渲染好的 artifact、`git diff baseline..HEAD` 通过 SSE 实时更新），且没有 owner。要 claim session 的 ownership、更好管理你过去的 sessions，先跑 `/stagent:login` 再 `/stagent:start`。
+skill 会打印一个实时 UI 链接。**未登录**时这是一个**匿名、任何人凭链接都能查看**的 session —— 拿到链接的人都能实时跟踪状态机运行（stage 时间线、渲染好的 artifact、`git diff baseline..HEAD` 通过 SSE 实时更新），且没有 owner。
 
 要完全离线跑就切到 local 模式：
 

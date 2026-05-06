@@ -19,9 +19,21 @@ Ejecuta estos slash commands **dentro de una sesión de Claude Code**. El modo c
 /plugin install stagent@stagent
 ```
 
+¿Ya está instalado? Actualízalo con:
+
+```
+/plugin update stagent@stagent
+```
+
 Requiere: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (el modo cloud también se apoya en utilidades POSIX estándar como `sha256sum` / `shasum`).
 
 ### Ejecutar un workflow
+
+**Opcional pero recomendado:** inicia sesión primero para reclamar la propiedad de la sesión y gestionar mejor tus sesiones pasadas.
+
+```
+/stagent:login
+```
 
 Inicia el workflow de desarrollo por defecto — construye lo que tú describas:
 
@@ -29,7 +41,7 @@ Inicia el workflow de desarrollo por defecto — construye lo que tú describas:
 /stagent:start --flow=cloud://demo "Build a journaling app with MBTI insights inferred from journal entries"
 ```
 
-El skill imprime una URL de UI en vivo. Sin iniciar sesión, esta es una sesión **anónima y públicamente visible** — cualquiera con el enlace puede ver la máquina de estados ejecutarse en tiempo real (línea de tiempo de stages, artifacts renderizados, `git diff baseline..HEAD` actualizándose en vivo vía SSE), y no tiene propietario. Para reclamar la propiedad de la sesión y gestionar mejor tus sesiones pasadas, ejecuta `/stagent:login` antes de `/stagent:start`.
+El skill imprime una URL de UI en vivo. Sin iniciar sesión, esta es una sesión **anónima y públicamente visible** — cualquiera con el enlace puede ver la máquina de estados ejecutarse en tiempo real (línea de tiempo de stages, artifacts renderizados, `git diff baseline..HEAD` actualizándose en vivo vía SSE), y no tiene propietario.
 
 Para una ejecución totalmente offline, cambia al modo local:
 

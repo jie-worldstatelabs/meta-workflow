@@ -19,9 +19,21 @@
 /plugin install stagent@stagent
 ```
 
+이미 설치되어 있나요? 업데이트:
+
+```
+/plugin update stagent@stagent
+```
+
 필요 항목: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (cloud 모드는 `sha256sum` / `shasum` 같은 표준 POSIX 도구도 사용).
 
 ### 워크플로우 실행하기
+
+**선택 사항이지만 권장:** session 의 ownership 을 claim 하고 지난 session 들을 더 잘 관리하려면 먼저 로그인하세요.
+
+```
+/stagent:login
+```
 
 기본 개발 워크플로우 시작 — 당신이 설명한 대로 빌드합니다:
 
@@ -29,7 +41,7 @@
 /stagent:start --flow=cloud://demo "Build a journaling app with MBTI insights inferred from journal entries"
 ```
 
-skill 이 라이브 UI URL 을 출력합니다. 로그인하지 않은 상태에서는 이는 **익명, 공개적으로 볼 수 있는** session URL 이며 — 링크를 가진 누구나 상태 머신의 실행을 실시간으로 추적할 수 있고 (stage 타임라인, 렌더링된 artifact, `git diff baseline..HEAD` 가 SSE 로 라이브 업데이트), 소유자는 없습니다. session 의 ownership 을 claim 하고 지난 session 들을 더 잘 관리하려면 `/stagent:start` 전에 `/stagent:login` 을 실행하세요.
+skill 이 라이브 UI URL 을 출력합니다. 로그인하지 않은 상태에서는 이는 **익명, 공개적으로 볼 수 있는** session URL 이며 — 링크를 가진 누구나 상태 머신의 실행을 실시간으로 추적할 수 있고 (stage 타임라인, 렌더링된 artifact, `git diff baseline..HEAD` 가 SSE 로 라이브 업데이트), 소유자는 없습니다.
 
 완전히 오프라인으로 실행하려면 local 모드로 전환:
 
