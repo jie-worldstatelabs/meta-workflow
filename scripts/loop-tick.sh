@@ -23,7 +23,8 @@
 #     "output_artifact_path": "<abs path>" | null,
 #     "transition_keys": [ "<key>", ... ],
 #     "required_inputs": [ { "type": ..., "key": ..., "description": ..., "path": ... }, ... ],
-#     "optional_inputs": [ ... ]
+#     "optional_inputs": [ ... ],
+#     "view_url": "<server>/s/<session_id>" | null
 #   }
 #
 # Non-zero exit with a diagnostic on stderr when no active workflow is
@@ -95,10 +96,16 @@ if [[ -z "$STATUS" ]]; then
   exit 1
 fi
 
+VIEW_URL=""
+if is_cloud_session "$RUN_DIR_NAME" && [[ -n "${STAGENT_SERVER:-}" ]]; then
+  VIEW_URL="${STAGENT_SERVER}/s/${RUN_DIR_NAME}"
+fi
+
 if is_terminal_status "$STATUS"; then
   jq -n \
     --arg s "$STATUS" \
     --argjson e "$EPOCH" \
+    --arg vu "$VIEW_URL" \
     '{
       status: $s,
       epoch: $e,
@@ -110,7 +117,8 @@ if is_terminal_status "$STATUS"; then
       output_artifact_path: null,
       transition_keys: [],
       required_inputs: [],
-      optional_inputs: []
+      optional_inputs: [],
+      view_url: (if $vu == "" then null else $vu end)
     }'
   exit 0
 fi
@@ -165,6 +173,7 @@ jq -n \
   --argjson tkeys "$TKEYS_JSON" \
   --argjson req "$REQUIRED_JSON" \
   --argjson opt "$OPTIONAL_JSON" \
+  --arg vu "$VIEW_URL" \
   '{
     status: $s,
     epoch: $e,
@@ -176,5 +185,6 @@ jq -n \
     output_artifact_path: (if $op == "" then null else $op end),
     transition_keys: $tkeys,
     required_inputs: $req,
-    optional_inputs: $opt
+    optional_inputs: $opt,
+    view_url: (if $vu == "" then null else $vu end)
   }'

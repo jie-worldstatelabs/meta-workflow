@@ -164,6 +164,7 @@ Loop:
          #   transition_keys,
          #   required_inputs[] / optional_inputs[]
          #   (each input: { type, key, description, path })
+         #   view_url   (cloud session live URL, or null in local mode)
 
   b. If the loop has reached a terminal:
          if [[ "$(echo "$TICK" | jq -r .is_terminal)" == "true" ]]; then
@@ -183,6 +184,12 @@ Loop:
              ---
 
      - `"subagent"`:
+         If TICK.view_url is non-null, print a single line to the user
+         BEFORE dispatching so they have something to watch while the
+         subagent runs:
+             📺 Watch live: <TICK.view_url>
+         (Skip this line in local mode — TICK.view_url is null then.)
+
          Call the Agent tool:
              - subagent_type: "stagent:workflow-subagent"
              - model: TICK.model (omit if null)
