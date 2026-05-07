@@ -121,37 +121,45 @@ fi
 
 # ──────────────────────────────────────────────────────────────
 # Bootstrap edge — setup-workflow.sh just wrote state.md, but
-# stagent:stagent has NEVER been invoked yet (loop-tick.sh would
-# have deleted the marker on its first successful run). If the
-# agent stops here, it's between Step 1 and Step 2 of the command
-# wrapper — the stage hasn't actually started, and the agent's
-# about to wait for user input on a stage that's never run.
+# stagent:stagent has NEVER been invoked yet. We detect this by
+# the absence of the `bootstrap_completed_at` field in state.md
+# (written exactly once by loop-tick.sh on its first successful run;
+# never cleared thereafter, even across stage transitions).
 #
-# Emit a different systemMessage that commands the agent to
-# invoke stagent:stagent RIGHT NOW, instead of the normal
-# interruptible "continue the conversation" hint (which reads as
-# "turn is over, wait for user"). Skip the awaiting_user=true
-# side effect because we're not genuinely waiting on the user —
-# we're waiting on the agent to finish chaining.
+# An empty field means the skill driver has not engaged this state.md
+# at all. If the agent stops here it's between setup and the first
+# Skill("stagent:stagent") invocation — the stage hasn't actually
+# started, and the agent's about to wait for user input on a stage
+# that's never run.
+#
+# Emit a different systemMessage that commands the agent to invoke
+# stagent:stagent RIGHT NOW, instead of the normal interruptible
+# "continue the conversation" hint (which reads as "turn is over,
+# wait for user"). Skip the awaiting_user=true side effect because
+# we're not genuinely waiting on the user — we're waiting on the
+# agent to finish chaining.
+#
+# Replaces the older `.bootstrap_pending` sentinel-file design
+# (negative marker deleted by side effect), which was vulnerable to
+# path mismatches between SCRATCH_DIR / TOPIC_DIR / dirname($STATE_FILE)
+# and to leaks across state.md corruption-recovery cycles. The new
+# field travels with state.md so the lifecycle bit cannot become
+# orphaned from the session it describes.
 # ──────────────────────────────────────────────────────────────
-if [[ -f "${TOPIC_DIR}/.bootstrap_pending" ]]; then
+BOOTSTRAP_COMPLETED_AT=$(get_bootstrap_completed_at "$STATE_FILE")
+if [[ -z "$BOOTSTRAP_COMPLETED_AT" ]]; then
   # Block the stop instead of merely emitting `systemMessage`. A
   # systemMessage is informational — claude is free to acknowledge it
   # and end the turn, which is exactly what's been observed in the
   # wild: setup completes, the boot message renders, and claude stops
   # without ever invoking `Skill("stagent:stagent")`. The workflow
-  # then sits frozen at its initial stage with `.bootstrap_pending`
-  # still on disk until the user prompts something else.
+  # then sits frozen at its initial stage with the field still empty
+  # until the user prompts something else.
   #
   # `decision: block` plus a `reason` body is the same control signal
   # the uninterruptible-stage path below uses. claude cannot end the
   # turn while this signal is in flight; the `reason` text becomes
   # the injected continuation prompt.
-  #
-  # Companion fix: loop-tick.sh now `rm -f`s this marker on its early
-  # resolve_state / config_check failure paths too, so a transient
-  # loop-tick error can't leave the marker behind and turn the block
-  # into a permanent retry loop.
   BOOT_REASON="🚀 Dev workflow: bootstrap complete at stage \"$STATUS\" (epoch $EPOCH). The stage loop driver has NOT been invoked yet. You MUST invoke \`Skill(\"stagent:stagent\")\` IMMEDIATELY in this same turn to drive the loop. Do NOT end the turn. Do NOT wait for user input. This is a hand-off window, not a pause."
   [[ -n "$SYNC_WARNINGS" ]] && BOOT_REASON="${BOOT_REASON}  |  sync warnings: ${SYNC_WARNINGS}"
   BOOT_MSG="🚀 Dev workflow | Phase: $STATUS (epoch $EPOCH) | bootstrap → invoking stage loop"

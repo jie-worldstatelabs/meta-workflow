@@ -114,6 +114,41 @@ set_awaiting_user() {
 }
 
 # ──────────────────────────────────────────────────────────────
+# bootstrap_completed_at — "the stagent skill driver has engaged
+# this state.md at least once."
+# ──────────────────────────────────────────────────────────────
+#
+# A positive lifecycle marker recorded inside state.md frontmatter,
+# replacing the older negative `.bootstrap_pending` sentinel file. Set
+# exactly once, by loop-tick.sh on its first successful run; never
+# cleared, even across stage transitions.
+#
+# Stop-hook.sh reads this to decide whether the bootstrap-edge
+# `decision: block` branch should fire. Empty / missing field means
+# "no driver has engaged yet → block to force `Skill("stagent:stagent")`
+# invocation". Any non-empty value means "loop is or was driving →
+# fall through to the normal interruptible / uninterruptible logic."
+#
+# Lives inside state.md so the lifecycle bit can never become orphaned
+# (e.g. file-system path mismatches between SCRATCH_DIR / TOPIC_DIR /
+# `dirname $STATE_FILE` that plagued the old sentinel-file design).
+
+get_bootstrap_completed_at() {
+  local file="$1"
+  _read_fm_field "$file" bootstrap_completed_at
+}
+
+# Idempotent: only writes when the field is empty/missing. Safe to
+# call on every loop tick — repeated invocations don't churn state.md.
+mark_bootstrap_completed() {
+  local file="$1"
+  local cur; cur="$(_read_fm_field "$file" bootstrap_completed_at)"
+  if [[ -z "$cur" ]]; then
+    set_fm_field "$file" bootstrap_completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────
 # Archive helper — move a run dir to .stagent/.archive/
 # ──────────────────────────────────────────────────────────────
 #

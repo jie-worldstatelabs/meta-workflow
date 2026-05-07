@@ -210,12 +210,16 @@ set_fm_field "$STATE_FILE" epoch "$NEW_EPOCH"
 # UserPromptSubmit hook therefore never fires.
 set_awaiting_user "$STATE_FILE" false
 
-# Any stage transition also clears the bootstrap-edge marker — at
-# this point the workflow has demonstrably advanced past the
-# bootstrap window, even if the user called update-status.sh
-# directly without going through loop-tick.sh first (rare, but
-# possible in debug/recovery workflows).
-rm -f "$(dirname "$STATE_FILE")/.bootstrap_pending"
+# Bootstrap-edge lifecycle is tracked by state.md's
+# `bootstrap_completed_at` field, normally written once by loop-tick.sh
+# on its first successful run. Update-status.sh can also be called
+# manually for debug / recovery without ever going through loop-tick
+# (rare but possible) — and any stage transition is by definition
+# proof the workflow has advanced past the bootstrap window. Seal the
+# field here too so the next stop-hook tick won't mistakenly trigger
+# the "skill not engaged" bootstrap-block branch. mark_bootstrap_completed
+# is idempotent: a no-op when the field is already set.
+mark_bootstrap_completed "$STATE_FILE"
 
 # Clear inflight markers for the stage we just left. SubagentStop
 # normally already removed them; this is the belt-and-suspenders

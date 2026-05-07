@@ -414,14 +414,11 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ---
 EOF
 
-  # Bootstrap-edge marker. Presence = "state.md just materialised but
-  # stagent:stagent has NOT yet been invoked to drive the loop." The
-  # stop hook detects this marker on the bootstrap turn and emits a
-  # different systemMessage ("invoke stagent:stagent now") instead of
-  # the normal interruptible "continue the conversation" hint, which
-  # gets misread as "wait for user" before the loop has even started.
-  # loop-tick.sh clears the marker on its first successful run.
-  touch "${SCRATCH_DIR}/.bootstrap_pending"
+  # Bootstrap-edge lifecycle is now derived from state.md's
+  # `bootstrap_completed_at` field (set by loop-tick.sh on first
+  # successful run). Setup writes state.md without the field; that
+  # absence IS the "skill not yet engaged" signal stop-hook reads.
+  # No sentinel file to write here — see mark_bootstrap_completed().
 
   cloud_register_session "$SESSION_ID" "$STAGENT_SERVER" "$WORKFLOW_URL"
 
@@ -552,11 +549,9 @@ started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ---
 EOF
 
-# Bootstrap-edge marker — see the cloud-path counterpart above. The
-# stop hook reads this to distinguish "just-bootstrapped, stagent:stagent
-# has not been invoked yet" from "normal interruptible pause", and emit
-# different guidance. loop-tick.sh clears it on first successful run.
-touch "${TOPIC_DIR}/.bootstrap_pending"
+# Bootstrap-edge lifecycle now lives inside state.md as the
+# `bootstrap_completed_at` field — see the cloud-path note above and
+# mark_bootstrap_completed() in lib.sh.
 
 # ──────────────────────────────────────────────────────────────
 # Phase 4: Generate run_files declared in workflow.json
