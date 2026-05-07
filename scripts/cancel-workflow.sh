@@ -13,6 +13,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
+# ── Audit log ────────────────────────────────────────────────────
+# Append one TSV row per cancel attempt to ~/.cache/stagent/cancel.log.
+# Captures sid, which branch the script took, server status class
+# observed, and final exit code. Trap-based so a single line is written
+# regardless of which exit path the script takes — including failures.
+# Failures inside the trap are swallowed so logging never affects the
+# user-visible exit code.
+_AUDIT_SID="?"
+_AUDIT_BRANCH="parse-args"
+_AUDIT_SRV="?"
+_AUDIT_LOG="${HOME}/.cache/stagent/cancel.log"
+_emit_audit() {
+  local rc=$?
+  {
+    mkdir -p "$(dirname "$_AUDIT_LOG")" 2>/dev/null
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+      "$(date -u +%FT%TZ)" \
+      "${_AUDIT_SID:-?}" \
+      "${_AUDIT_BRANCH:-?}" \
+      "${_AUDIT_SRV:-?}" \
+      "$rc" \
+      >> "$_AUDIT_LOG" 2>/dev/null
+  } || true
+  return $rc
+}
+trap _emit_audit EXIT
+
 HARD=""
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -35,8 +62,18 @@ if ! resolve_state; then
   # fallback the user is stuck: /stagent:start refuses ("server has
   # active workflow"), /stagent:cancel refuses ("no local state"). We
   # check the cwd-cache for a session_id this directory was last tied
-  # to and, if the server still flags it active, fire a server-side
-  # cancel to break the deadlock.
+  # to and reconcile against the server.
+  #
+  # Two distinct sub-cases:
+  #   (a) server reports `active` → local cancelled mid-flight, server
+  #       still owes us a cancel POST. Fire it, then sweep local.
+  #   (b) server is non-active (cancelled / archived / unknown) but the
+  #       local registry file still exists → leaked from a previous
+  #       cancel that completed on the server but didn't fully clean
+  #       locally (e.g. webapp-side cancel, cancel script killed
+  #       between wipe_scratch and unregister_session). Sweep the
+  #       leaked registry so /stagent:start unblocks. Idempotent — if
+  #       there's nothing to clean we fall through.
   #
   # Safety:
   #   - Only the cwd-cache is consulted (PPID walk forced off via
@@ -47,10 +84,16 @@ if ! resolve_state; then
   #     checks — POSTing cancel from a different identity returns 403.
   #   - Anonymous sessions are URL-as-credential by design; if the cwd
   #     cache still points at one, the user is the URL holder.
+  _AUDIT_BRANCH="resolve-failed"
   CLOUD_SID="${DESIRED_SESSION:-$(_DW_FORCE_CWD_CACHE=1 read_cached_session_id 2>/dev/null || true)}"
+  _AUDIT_SID="${CLOUD_SID:-?}"
   if [[ -n "$CLOUD_SID" ]]; then
     SRV_CLASS="$(cloud_session_status_class "$CLOUD_SID" 2>/dev/null || echo unknown)"
+    _AUDIT_SRV="$SRV_CLASS"
+
+    # (a) server still active — break the deadlock by cancelling there.
     if [[ "$SRV_CLASS" == "active" ]]; then
+      _AUDIT_BRANCH="fallback-server-active"
       echo "▶️  No local state for session ${CLOUD_SID}, but the server still has it active." >&2
       echo "   Cancelling on the server to clear the deadlock..." >&2
       if [[ -n "$HARD" ]]; then
@@ -70,8 +113,24 @@ if ! resolve_state; then
       fi
       exit 0
     fi
+
+    # (b) server non-active — sweep any leaked local registry file.
+    # cloud_registry_file gives the canonical path; existence test
+    # avoids running unregister for sessions that have nothing left
+    # to clean (which would still succeed but is noisy in the log).
+    _CR_FILE="$(cloud_registry_file "$CLOUD_SID" 2>/dev/null || echo "")"
+    if [[ -n "$_CR_FILE" ]] && [[ -f "$_CR_FILE" ]]; then
+      _AUDIT_BRANCH="fallback-stale-registry"
+      echo "▶️  Stale local registry for session ${CLOUD_SID} (server status: ${SRV_CLASS})." >&2
+      echo "   Cleaning up local-only state — server already finalised this session." >&2
+      cloud_wipe_scratch    "$CLOUD_SID" 2>/dev/null || true
+      cloud_unregister_session "$CLOUD_SID" 2>/dev/null || true
+      echo "Dev workflow registry cleaned (server status was '${SRV_CLASS}')."
+      exit 0
+    fi
   fi
 
+  _AUDIT_BRANCH="no-match"
   echo "No matching dev workflow to cancel." >&2
   if workflows=$(list_all_workflows); [[ -n "$workflows" ]]; then
     echo "   Available workflows:" >&2
@@ -79,6 +138,7 @@ if ! resolve_state; then
   fi
   exit 1
 fi
+_AUDIT_SID="${RUN_DIR_NAME:-$_AUDIT_SID}"
 
 # Surface in-flight subagent ids so the slash command can TaskStop them
 # before completing the cancel. Without this, the orphan subagent keeps
@@ -105,11 +165,13 @@ fi
 # shadow dir, drop the registry entry. No local archive — server holds the
 # audit trail.
 if is_cloud_session "$RUN_DIR_NAME"; then
+  _AUDIT_BRANCH="cloud-main${HARD:+-hard}"
   if [[ -n "$HARD" ]]; then
     cloud_delete_session "$RUN_DIR_NAME" || true
   else
     cloud_post_cancel "$RUN_DIR_NAME" || {
       echo "⚠️  cloud cancel POST failed — the server may still show this run as active" >&2
+      _AUDIT_SRV="post-failed"
     }
   fi
   cloud_wipe_scratch "$RUN_DIR_NAME"
@@ -123,6 +185,7 @@ if is_cloud_session "$RUN_DIR_NAME"; then
 fi
 
 if [[ -n "$HARD" ]]; then
+  _AUDIT_BRANCH="local-hard"
   # Hard delete — no archive, no audit trail.
   if [[ -d "$TOPIC_DIR" ]]; then
     rm -rf "$TOPIC_DIR"
@@ -135,6 +198,7 @@ if [[ -n "$HARD" ]]; then
 fi
 
 # Default: archive to .stagent/.archive/<ts>-<topic>-cancelled/
+_AUDIT_BRANCH="local-archive"
 rc=0
 archive_run_dir "$TOPIC_DIR" "$TOPIC" "cancelled" || rc=$?
 case $rc in
