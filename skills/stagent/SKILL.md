@@ -238,32 +238,16 @@ Both helper scripts auto-resolve to the current session's run. Pass `--topic <na
 
 ### Where stage I/O paths come from
 
-You never need to hardcode artifact paths. The Step 2 loop body picks
-them up directly from helper-script output:
+You never need to hardcode artifact paths. Three channels surface the current stage's required/optional input paths, output path, and execution params.
 
-**Primary — `loop-tick.sh` TICK JSON** (every iteration, both inline
-and subagent stages)
-`stage_instructions_path`, `output_artifact_path`, `required_inputs[]`,
-`optional_inputs[]`, `transition_keys`, `execution_type`, `model`,
-`view_url` — all live on the TICK object, parsed with `jq`. This is
-the source you should rely on inside the loop.
+**Channel 0 — `loop-tick.sh` TICK JSON** (loop body's primary source, both inline and subagent stages)
+Each iteration parses TICK with `jq` for `stage_instructions_path`, `output_artifact_path`, `required_inputs[]`, `optional_inputs[]`, `transition_keys`, etc. — see Step 2 above.
 
-**Echo channel — `setup-workflow.sh` / `update-status.sh` stdout**
-When a transition lands, these scripts print a human-readable summary
-of the new stage's inputs and output paths. Same paths as TICK; useful
-as a sanity-check or for surfacing to the user — don't build the
-loop's path resolution off this stdout, since it's a textual echo
-rather than a structured contract.
+**Channel 1 — `setup-workflow.sh` / `update-status.sh` stdout** (inline stages)
+When the workflow enters a new stage, the transition script prints the stage's inputs and output. Read and use these paths verbatim.
 
-**Subagent self-resolution — `subagent-bootstrap.sh`** (inside the
-subagent only)
-When a stage's `execution.type` is `"subagent"`, the dispatched
-`stagent:workflow-subagent` runs `subagent-bootstrap.sh` as its
-mandatory first action to self-resolve stage name / epoch / paths /
-valid result keys from state.md + workflow.json. The main agent does
-NOT call this script — it just passes the canonical Agent-tool
-parameters that `agent-guard.sh` prints (subagent_type / model / mode
-/ prompt).
+**Channel 2 — `subagent-bootstrap.sh`** (subagent stages only)
+Runs inside the subagent as its mandatory first action. The subagent self-resolves stage name / epoch / all paths / valid result keys from state.md + workflow.json — the main agent just passes the canonical Agent-tool parameters surfaced by `agent-guard.sh`.
 
 ## Error Handling
 
