@@ -139,9 +139,11 @@ If this exits non-zero, halt the skill and relay the stderr to the user verbatim
 ### Step 2 — Stage loop
 
 Two plugin helpers give you everything you need about the current
-workflow state as **JSON** (parsed with `jq`). Never hand-parse
-`state.md` or `workflow.json` with `grep` / `sed` / `jq` yourself —
-frontmatter quote-stripping bugs have burned this loop before.
+workflow state as **JSON** (parse the JSON with `jq`). Never hand-parse
+the raw `state.md` or `workflow.json` files yourself with `grep` /
+`sed` / `awk` — always run one of the helpers below and `jq` its
+output instead. Frontmatter quote-stripping bugs have burned this
+loop before.
 
 - `"$P/scripts/loop-tick.sh"` — current-stage snapshot
 - `"$P/scripts/next-status.sh" --result <R>` — post-artifact lookup
@@ -236,13 +238,32 @@ Both helper scripts auto-resolve to the current session's run. Pass `--topic <na
 
 ### Where stage I/O paths come from
 
-You never need to hardcode artifact paths. Two channels surface the current stage's required/optional input paths, output path, and execution params.
+You never need to hardcode artifact paths. The Step 2 loop body picks
+them up directly from helper-script output:
 
-**Channel 1 — `setup-workflow.sh` / `update-status.sh` stdout** (inline stages)
-When the workflow enters a new stage, the transition script prints the stage's inputs and output. Read and use these paths verbatim.
+**Primary — `loop-tick.sh` TICK JSON** (every iteration, both inline
+and subagent stages)
+`stage_instructions_path`, `output_artifact_path`, `required_inputs[]`,
+`optional_inputs[]`, `transition_keys`, `execution_type`, `model`,
+`view_url` — all live on the TICK object, parsed with `jq`. This is
+the source you should rely on inside the loop.
 
-**Channel 2 — `subagent-bootstrap.sh`** (subagent stages only)
-Runs inside the subagent as its mandatory first action. The subagent self-resolves stage name / epoch / all paths / valid result keys from state.md + workflow.json — the main agent just passes the canonical Agent-tool parameters surfaced by `agent-guard.sh`.
+**Echo channel — `setup-workflow.sh` / `update-status.sh` stdout**
+When a transition lands, these scripts print a human-readable summary
+of the new stage's inputs and output paths. Same paths as TICK; useful
+as a sanity-check or for surfacing to the user — don't build the
+loop's path resolution off this stdout, since it's a textual echo
+rather than a structured contract.
+
+**Subagent self-resolution — `subagent-bootstrap.sh`** (inside the
+subagent only)
+When a stage's `execution.type` is `"subagent"`, the dispatched
+`stagent:workflow-subagent` runs `subagent-bootstrap.sh` as its
+mandatory first action to self-resolve stage name / epoch / paths /
+valid result keys from state.md + workflow.json. The main agent does
+NOT call this script — it just passes the canonical Agent-tool
+parameters that `agent-guard.sh` prints (subagent_type / model / mode
+/ prompt).
 
 ## Error Handling
 
@@ -267,7 +288,7 @@ Runs inside the subagent as its mandatory first action. The subagent self-resolv
 - **Transitions must come from the config.** Only call `update-status.sh --status <X>` when `<X>` is either a member of `workflow.json` → `terminal_stages` or the destination of a legitimate transition for the current stage's `result:` (i.e. `workflow.json` → `stages.<current>.transitions[<result>] == <X>`). Never guess a transition.
 - **Terminal statuses** (the values in `workflow.json` → `terminal_stages`) release the stop hook and end the workflow. `complete` is the conventional normal terminator reached via the transition table; `escalated` is the escape hatch for unrecoverable errors.
 - **Never self-approve** — only a subagent's or inline stage's legitimate `result:` (written to its artifact and matching a transition key) can move the workflow forward. Do not hand-write results to force a transition.
-- **All artifact paths come from script output** — use the paths printed by `setup-workflow.sh` / `update-status.sh` / `stage-context.sh`. Never construct a path yourself.
+- **All artifact paths come from helper output** — `loop-tick.sh` JSON (`stage_instructions_path` / `output_artifact_path` / `required_inputs` / `optional_inputs`) is the primary source inside the loop; `setup-workflow.sh` / `update-status.sh` stdout echo the same paths on transitions. Never construct a path yourself.
 - **The loop is infinite** — it stops only on reaching a terminal status, `/stagent:interrupt`, or `/stagent:cancel`.
   - `/stagent:interrupt` — pause and preserve state (resumable via `/stagent:continue`)
   - `/stagent:cancel` — cancel and clear all state
