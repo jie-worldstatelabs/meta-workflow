@@ -160,7 +160,7 @@ if [[ -z "$BOOTSTRAP_COMPLETED_AT" ]]; then
   # the uninterruptible-stage path below uses. claude cannot end the
   # turn while this signal is in flight; the `reason` text becomes
   # the injected continuation prompt.
-  BOOT_REASON="🚀 Dev workflow: bootstrap complete at stage \"$STATUS\" (epoch $EPOCH). The stage loop driver has NOT been invoked yet. You MUST invoke \`Skill(\"stagent:stagent\")\` IMMEDIATELY in this same turn to drive the loop. Do NOT end the turn. Do NOT wait for user input. This is a hand-off window, not a pause."
+  BOOT_REASON="⚙️ Dev workflow: skill driver has not engaged stage \"$STATUS\" (epoch $EPOCH). state.md is missing \`bootstrap_completed_at\` — the field loop-tick.sh writes on its first successful run. Invoke \`Skill(\"stagent:stagent\")\` and run its Step 1 Bash through your Bash tool. Loading the skill or describing the stage in prose does not advance the lifecycle; only running the script does."
   [[ -n "$SYNC_WARNINGS" ]] && BOOT_REASON="${BOOT_REASON}  |  sync warnings: ${SYNC_WARNINGS}"
   BOOT_MSG="🚀 Dev workflow | Phase: $STATUS (epoch $EPOCH) | bootstrap → invoking stage loop"
   jq -n \
