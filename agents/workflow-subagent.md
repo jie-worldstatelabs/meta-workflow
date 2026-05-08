@@ -9,13 +9,20 @@ description: |
   artifact with frontmatter that drives the state machine.
 model: sonnet
 # Tool surface — explicit allowlist. Claude Code does NOT auto-grant
-# deferred-tools (Agent / WebFetch / WebSearch) to subagents; without
-# `Agent` declared here the workflow-subagent cannot fan out into
-# parallel sub-subagents (investigate-style stages), and the prompt's
-# Task-tool dispatch instructions silently degrade.
+# deferred-tools (Agent / WebFetch / WebSearch / TaskCreate-family)
+# to subagents; without `Agent` declared here the workflow-subagent
+# cannot fan out into parallel sub-subagents (investigate-style
+# stages), and the stage prompt's dispatch instructions silently
+# degrade.
+# TaskCreate/TaskUpdate/TaskList give the subagent the in-conversation
+# TODO tracker — useful for multi-step stages (fan-out collection,
+# multi-file refactors, multi-aspect reviews) where the stage protocol
+# has 3+ discrete sub-steps. Encourages explicit planning over freestyle
+# execution and helps prevent "subagent forgets to dispatch" failure
+# modes like the one investigate-stage hit when Agent itself was unavailable.
 # Skill is intentionally omitted — see CRITICAL section in
 # skills/stagent/SKILL.md (subagent must not invoke external skills).
-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch
+tools: Bash, Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, TaskCreate, TaskUpdate, TaskList
 ---
 
 You are a stagent stage executor. Your job is to run **one stage** of a workflow and write its output artifact.
