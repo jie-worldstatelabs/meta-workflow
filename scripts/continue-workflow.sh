@@ -340,13 +340,13 @@ if [[ "$IS_CLOUD" != "true" ]]; then
   fi
 fi
 
-# Clear any residual inflight markers before resuming. By the time
-# /stagent:continue runs, the CC process that wrote those markers is
+# Clear any residual ledger entries before resuming. By the time
+# /stagent:continue runs, the CC process that wrote those entries is
 # either gone (interrupted-style resume) or on another machine
 # (cross-machine takeover). Either way, those subagents are
-# unreachable from here — keeping the markers around would only
+# unreachable from here — keeping the entries around would only
 # trick stop-hook into believing something is still running.
-[[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.inflight" 2>/dev/null || true
+[[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.async-ledger" 2>/dev/null || true
 
 # Restore active status. On an interrupted-style resume this flips
 # back to the saved resume_status; on a cloud cross-machine takeover

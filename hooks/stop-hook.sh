@@ -320,23 +320,56 @@ DO NOT STOP. The loop is infinite — only /stagent:interrupt or /stagent:cancel
   fi
 else
   # ──────────────────────────────────────────────────────────────
-  # In-flight check (state 2): the main agent already launched a
-  # workflow subagent for this stage+epoch and is now idle waiting
-  # for the async completion notification. Allow the stop cleanly
-  # rather than blocking — blocking here is what produces the
-  # spurious double-launch race.
+  # In-flight check: any async Agent dispatch (workflow-subagent for
+  # subagent-type stages, general-purpose for inline fan-out stages,
+  # or any other subagent_type) leaves a record under .async-ledger/.
+  # While at least one record exists, the parent is yielding to async
+  # work that will auto-wake it on tool_result injection. Block here
+  # would force a re-inject that re-reads the stage protocol and
+  # re-dispatches every Agent call → duplicate work. Exit cleanly
+  # with an informational systemMessage instead.
   #
-  # post-agent.sh writes the marker; SubagentStop / update-status /
-  # /stagent:interrupt|cancel / /stagent:continue / SessionStart
-  # remove it.
+  # Maintained by agent-ledger-add.sh (PostToolUse Agent + isAsync
+  # gate) and agent-ledger-remove.sh (SubagentStop, transcript_path
+  # primary match with agent_id fallback). Wiped by update-status.sh
+  # on stage transition, continue-workflow.sh on resume,
+  # session-start.sh on recovery, interrupt-workflow.sh /
+  # cancel-workflow.sh on user halt.
   # ──────────────────────────────────────────────────────────────
-  INFLIGHT_FILE="${TOPIC_DIR}/.inflight/${STATUS}-${EPOCH}.json"
-  if [[ -f "$INFLIGHT_FILE" ]]; then
-    EXISTING_AGENT=$(jq -r '.agent_id // ""' "$INFLIGHT_FILE" 2>/dev/null || true)
-    SYSTEM_MSG="🔄 Dev workflow | Phase: $STATUS (epoch $EPOCH) | subagent in flight${EXISTING_AGENT:+ (agent_id: $EXISTING_AGENT)} — waiting for completion"
-    [[ -n "$SYNC_WARNINGS" ]] && SYSTEM_MSG="${SYSTEM_MSG}  |  sync warnings: ${SYNC_WARNINGS}"
-    jq -n --arg msg "$SYSTEM_MSG" '{"systemMessage": $msg}'
-    exit 0
+  LEDGER_DIR="${TOPIC_DIR}/.async-ledger"
+  if [[ -d "$LEDGER_DIR" ]]; then
+    # Build a per-subagent breakdown so the user can see what's
+    # actually running and why the conversation looks paused. We
+    # render: subagent_type · short agent_id · started timestamp.
+    # Elapsed-time formatting is intentionally absent — date math
+    # in bash is platform-specific (mac/GNU diverge) and the
+    # absolute "started 14:22:13Z" tells the user enough.
+    DETAIL_LINES=""
+    ACTIVE=0
+    for f in "$LEDGER_DIR"/*.json; do
+      [[ -f "$f" ]] || continue
+      ACTIVE=$((ACTIVE + 1))
+      ROW=$(jq -r '
+        "  • " +
+        (.subagent_type // "?") +
+        " · " +
+        ((.agent_id // "?") | .[0:12]) +
+        " · started " +
+        (.started // "?")
+      ' "$f" 2>/dev/null)
+      [[ -n "$ROW" ]] && DETAIL_LINES="${DETAIL_LINES}${DETAIL_LINES:+
+}${ROW}"
+    done
+    if [[ "$ACTIVE" -gt 0 ]]; then
+      SYSTEM_MSG="⏳ Dev workflow | $STATUS stage (epoch $EPOCH) | $ACTIVE subagent(s) in flight:
+${DETAIL_LINES}
+Main agent will resume automatically when each completes (no action needed). Use /stagent:interrupt to pause or /stagent:cancel to abort."
+      [[ -n "$SYNC_WARNINGS" ]] && SYSTEM_MSG="${SYSTEM_MSG}
+
+sync warnings: ${SYNC_WARNINGS}"
+      jq -n --arg msg "$SYSTEM_MSG" '{"systemMessage": $msg}'
+      exit 0
+    fi
   fi
 
   if [[ ! -f "$ARTIFACT" ]]; then

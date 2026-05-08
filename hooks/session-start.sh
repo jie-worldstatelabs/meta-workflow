@@ -58,7 +58,7 @@ if [[ -f "$LIB" ]]; then
     DESIRED_SESSION="$SID"
     if resolve_state >/dev/null 2>&1; then
       resolve_workflow_dir_from_state >/dev/null 2>&1
-      [[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.inflight"
+      [[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.async-ledger"
     fi
   ) || true
 fi

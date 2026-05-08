@@ -221,11 +221,14 @@ set_awaiting_user "$STATE_FILE" false
 # is idempotent: a no-op when the field is already set.
 mark_bootstrap_completed "$STATE_FILE"
 
-# Clear inflight markers for the stage we just left. SubagentStop
-# normally already removed them; this is the belt-and-suspenders
-# cleanup for any path where a transition happens without a clean
-# subagent stop event (manual update-status, inline stages, etc.).
-rm -rf "${TOPIC_DIR}/.inflight" 2>/dev/null || true
+# Wipe the async-dispatch ledger. Reaching this point means the
+# previous stage produced a valid artifact, which means every Agent
+# tool dispatch the stage emitted has by definition completed (the
+# stage couldn't have written its artifact otherwise). Any entries
+# still present are stale — agent-ledger-{add,remove}.sh hooks
+# didn't fire symmetrically (e.g. manual update-status, SubagentStop
+# missed). Wipe defensively so the next stage starts clean.
+rm -rf "${TOPIC_DIR}/.async-ledger" 2>/dev/null || true
 
 # Record the git HEAD seen by this workdir at transition time. continue-
 # workflow.sh compares current workdir HEAD against this to detect

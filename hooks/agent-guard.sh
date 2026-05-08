@@ -43,27 +43,47 @@ if ! config_is_stage "$STATUS"; then
 fi
 
 # Deny duplicate launch: if a workflow subagent for this stage+epoch
-# is already in flight (post-agent.sh wrote a marker, subagent hasn't
+# is already in flight (recorded in .async-ledger/, subagent hasn't
 # stopped yet), refuse this Agent call. Without this, a stop-hook
-# false-positive (which we also fix in stop-hook.sh) or any other path
-# that prods the main agent into another launch would otherwise
-# produce two concurrent subagents writing to the same project.
+# false-positive or any other path that prods the main agent into
+# another launch would otherwise produce two concurrent subagents
+# writing to the same project.
 #
 # Filter: only deny when the launch target IS the stagent workflow
-# subagent. Other Agent calls (unrelated skills, user-driven Task
-# delegations) must pass through even while our workflow has an
-# in-flight subagent.
+# subagent. Inline fan-out stages legitimately emit N parallel
+# general-purpose subagents — those must pass through. Other Agent
+# calls (unrelated skills, user-driven Task delegations) likewise
+# must pass through even while our workflow has an in-flight
+# subagent.
 INCOMING_SUBAGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.tool_input.subagent_type // ""' 2>/dev/null || true)
-INFLIGHT_FILE="${TOPIC_DIR}/.inflight/${STATUS}-${EPOCH}.json"
-if [[ "$INCOMING_SUBAGENT_TYPE" == "stagent:workflow-subagent" ]] && [[ -f "$INFLIGHT_FILE" ]]; then
-  EXISTING_AGENT=$(jq -r '.agent_id // ""' "$INFLIGHT_FILE" 2>/dev/null || true)
-  jq -n \
-    --arg reason "[stagent] Refusing to launch a second subagent for stage '$STATUS' (epoch $EPOCH) — one is already in flight (agent_id: ${EXISTING_AGENT:-unknown}). Wait for it to complete; do not stop, the completion notification will arrive. To abort, run /stagent:interrupt or /stagent:cancel." \
-    '{
-      "decision": "block",
-      "reason": $reason
-    }'
-  exit 0
+if [[ "$INCOMING_SUBAGENT_TYPE" == "stagent:workflow-subagent" ]]; then
+  LEDGER_DIR="${TOPIC_DIR}/.async-ledger"
+  if [[ -d "$LEDGER_DIR" ]]; then
+    EXISTING_AGENT=""
+    for f in "$LEDGER_DIR"/*.json; do
+      [[ -f "$f" ]] || continue
+      MATCH=$(jq -r --arg s "$STATUS" --arg e "$EPOCH" '
+        select(
+          (.subagent_type == "stagent:workflow-subagent")
+          and (.stage == $s)
+          and ((.epoch | tostring) == $e)
+        ) | .agent_id // ""
+      ' "$f" 2>/dev/null)
+      if [[ -n "$MATCH" ]]; then
+        EXISTING_AGENT="$MATCH"
+        break
+      fi
+    done
+    if [[ -n "$EXISTING_AGENT" ]]; then
+      jq -n \
+        --arg reason "[stagent] Refusing to launch a second workflow subagent for stage '$STATUS' (epoch $EPOCH) — one is already in flight (agent_id: $EXISTING_AGENT). Wait for it to complete; do not stop, the completion notification will arrive. To abort, run /stagent:interrupt or /stagent:cancel." \
+        '{
+          "decision": "block",
+          "reason": $reason
+        }'
+      exit 0
+    fi
+  fi
 fi
 
 ARTIFACT="$(config_artifact_path "$STATUS" "$RUN_DIR_NAME" "$PROJECT_ROOT")"
@@ -72,11 +92,24 @@ TRANSITION_KEYS="$(config_transition_keys "$STATUS")"
 INSTRUCTIONS_PATH="$(config_stage_instructions_path "$STATUS")"
 
 if [[ "$EXEC_TYPE" == "inline" ]]; then
-  cat <<EOF
+  # Inline stages run in the main agent's own turn. Two sub-cases:
+  #
+  #   a) Main agent is launching `stagent:workflow-subagent` —
+  #      that's wrong for an inline stage (workflow-subagent is for
+  #      subagent-type stages). Warn explicitly so the agent
+  #      doesn't end up doing nothing.
+  #
+  #   b) Main agent is launching some other subagent_type
+  #      (e.g. general-purpose for parallel fan-out, per the stage
+  #      protocol). That's intentional — pass through silently so
+  #      the main agent can emit N parallel calls in a single
+  #      response without per-call hook chatter cluttering its
+  #      context and biasing it toward sequential dispatch.
+  if [[ "$INCOMING_SUBAGENT_TYPE" == "stagent:workflow-subagent" ]]; then
+    cat <<EOF
 [stagent] Active workflow (phase: $STATUS, epoch: $EPOCH).
 This stage is INLINE — the main agent runs it directly.
-Do NOT launch a subagent for this phase.
-If you're about to launch workflow-subagent, you probably need to transition out of $STATUS first via ${CLAUDE_PLUGIN_ROOT}/scripts/update-status.sh.
+Do NOT launch \`stagent:workflow-subagent\` here. If you really meant to advance, transition out of $STATUS first via ${CLAUDE_PLUGIN_ROOT}/scripts/update-status.sh.
 
 Stage instructions: $INSTRUCTIONS_PATH
 Expected output: $ARTIFACT
@@ -85,6 +118,7 @@ Expected output: $ARTIFACT
   result: <one of: $TRANSITION_KEYS>
   ---
 EOF
+  fi
   exit 0
 fi
 

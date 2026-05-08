@@ -141,25 +141,27 @@ fi
 _AUDIT_SID="${RUN_DIR_NAME:-$_AUDIT_SID}"
 
 # Surface in-flight subagent ids so the slash command can TaskStop them
-# before completing the cancel. Without this, the orphan subagent keeps
+# before completing the cancel. Without this, orphan subagents keep
 # running and may corrupt the project after the workflow has been wiped.
-INFLIGHT_DIR="${TOPIC_DIR:-}/.inflight"
-INFLIGHT_AGENT_IDS=""
-if [[ -n "${TOPIC_DIR:-}" ]] && [[ -d "$INFLIGHT_DIR" ]]; then
-  for f in "$INFLIGHT_DIR"/*.json; do
+# Covers BOTH workflow-subagent dispatches and inline-fanout
+# general-purpose dispatches — every async Agent call is in the ledger.
+LEDGER_DIR="${TOPIC_DIR:-}/.async-ledger"
+LEDGER_AGENT_IDS=""
+if [[ -n "${TOPIC_DIR:-}" ]] && [[ -d "$LEDGER_DIR" ]]; then
+  for f in "$LEDGER_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     aid=$(jq -r '.agent_id // ""' "$f" 2>/dev/null || true)
-    [[ -n "$aid" ]] && [[ "$aid" != "null" ]] && INFLIGHT_AGENT_IDS+="${INFLIGHT_AGENT_IDS:+ }$aid"
+    [[ -n "$aid" ]] && [[ "$aid" != "null" ]] && LEDGER_AGENT_IDS+="${LEDGER_AGENT_IDS:+ }$aid"
   done
 fi
-if [[ -n "$INFLIGHT_AGENT_IDS" ]]; then
-  echo "STAGENT_STOP_AGENT_IDS: $INFLIGHT_AGENT_IDS"
+if [[ -n "$LEDGER_AGENT_IDS" ]]; then
+  echo "STAGENT_STOP_AGENT_IDS: $LEDGER_AGENT_IDS"
 fi
 # Hard cleanup — local cancel branches below either rm -rf TOPIC_DIR
 # or archive it, but the cloud branch only wipes the shadow afterwards
-# and we want the marker gone before any "are we still in flight?"
+# and we want the ledger gone before any "are we still in flight?"
 # check elsewhere races.
-[[ -n "${TOPIC_DIR:-}" ]] && rm -rf "$INFLIGHT_DIR" 2>/dev/null || true
+[[ -n "${TOPIC_DIR:-}" ]] && rm -rf "$LEDGER_DIR" 2>/dev/null || true
 
 # Cloud mode: server is authoritative. Hit the cancel endpoint, wipe the
 # shadow dir, drop the registry entry. No local archive — server holds the

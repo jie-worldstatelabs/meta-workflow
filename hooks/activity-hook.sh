@@ -111,7 +111,17 @@ IS_ERROR=$(echo "$HOOK_INPUT" | jq -r '
   else "false" end
 ' 2>/dev/null || echo "false")
 
+# Sidechain identity: when this PostToolUse fires inside a subagent,
+# Claude Code sets is_sidechain=true and adds agent_id / agent_type
+# top-level fields (per https://code.claude.com/docs/en/hooks.md).
+# Older CC versions may not set these — we fall back to false / ""
+# so the row still posts cleanly and the webapp degrades gracefully.
+IS_SIDECHAIN=$(echo "$HOOK_INPUT" | jq -r '.is_sidechain // false' 2>/dev/null || echo "false")
+AGENT_ID=$(echo "$HOOK_INPUT" | jq -r '.agent_id // ""' 2>/dev/null || true)
+AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null || true)
+
 cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
-  "$TOOL_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR"
+  "$TOOL_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR" \
+  "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE"
 
 exit 0

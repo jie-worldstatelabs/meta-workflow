@@ -1846,12 +1846,18 @@ cloud_post_activity() {
   #   1 sid, 2 stage, 3 epoch, 4 tool, 5 summary,
   #   6 tool_input_json (raw JSON string — may be empty),
   #   7 tool_result_json (raw JSON string — may be empty),
-  #   8 is_error ("true" / "false" / empty)
+  #   8 is_error ("true" / "false" / empty),
+  #   9 is_sidechain ("true" / "false" / empty),
+  #  10 agent_id (string — empty for main agent / older CC),
+  #  11 agent_type (string — empty for main agent / older CC)
   #
-  # Extra fields are optional for backward compat; callers that only
-  # pass 1-5 still work (legacy activity recording with summary only).
+  # Extra fields are optional for backward compat; callers that pass
+  # 1-5 or 1-8 still work — older CC versions that don't expose
+  # is_sidechain/agent_id won't break, the row just lands without
+  # sidechain provenance and the webapp degrades gracefully.
   local sid="$1" stage="$2" epoch="$3" tool="$4" summary="$5"
   local tin="${6:-}" tres="${7:-}" ierr="${8:-false}"
+  local is_sidechain="${9:-false}" agent_id="${10:-}" agent_type="${11:-}"
   cloud_require_env 2>/dev/null || return 0
   local server; server="$(_cloud_server "$sid")"
   [[ -z "$server" ]] && return 0
@@ -1860,17 +1866,61 @@ cloud_post_activity() {
   [[ -z "$tin"  ]] || echo "$tin"  | jq -e . >/dev/null 2>&1 || tin=""
   [[ -z "$tres" ]] || echo "$tres" | jq -e . >/dev/null 2>&1 || tres=""
   [[ "$ierr" == "true" || "$ierr" == "false" ]] || ierr="false"
+  [[ "$is_sidechain" == "true" || "$is_sidechain" == "false" ]] || is_sidechain="false"
   local payload
   payload="$(jq -n \
-      --arg stage   "$stage" \
-      --arg tool    "$tool" \
-      --arg summary "$summary" \
-      --argjson epoch "${epoch:-0}" \
-      --argjson input  "${tin:-null}" \
-      --argjson result "${tres:-null}" \
-      --argjson is_error "$ierr" \
+      --arg stage      "$stage" \
+      --arg tool       "$tool" \
+      --arg summary    "$summary" \
+      --arg agent_id   "$agent_id" \
+      --arg agent_type "$agent_type" \
+      --argjson epoch        "${epoch:-0}" \
+      --argjson input        "${tin:-null}" \
+      --argjson result       "${tres:-null}" \
+      --argjson is_error     "$ierr" \
+      --argjson is_sidechain "$is_sidechain" \
       '{stage: $stage, tool: $tool, summary: $summary, epoch: $epoch,
-        tool_input: $input, tool_result: $result, is_error: $is_error}')" || return 0
+        tool_input: $input, tool_result: $result, is_error: $is_error,
+        is_sidechain: $is_sidechain, agent_id: $agent_id, agent_type: $agent_type}')" || return 0
+  curl -sS --max-time 1 \
+    -X POST "${server}/api/sessions/${sid}/activity" \
+    -H "Content-Type: application/json" \
+    -H "$(_cloud_auth_header)" \
+    --data "$payload" \
+    >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+  return 0
+}
+
+# POST a "subagent finished" marker to the events stream. Called by
+# agent-ledger-remove.sh on SubagentStop so the webapp's grouped live
+# activity can flip a subagent's status badge from "running" to "done"
+# without having to infer it from event-stream gaps.
+#
+# Same fire-and-forget semantics as cloud_post_activity (1s curl
+# timeout, backgrounded, silent on failure). The activity API route
+# accepts an optional event_type discriminator and stores this row
+# with type='subagent_stopped' instead of 'tool_use'.
+#
+# Args: sid stage epoch agent_id agent_type started_iso
+cloud_post_subagent_stopped() {
+  local sid="$1" stage="$2" epoch="$3" agent_id="$4" agent_type="$5" started="$6"
+  [[ -z "$agent_id" ]] && return 0
+  cloud_require_env 2>/dev/null || return 0
+  local server; server="$(_cloud_server "$sid")"
+  [[ -z "$server" ]] && return 0
+  local payload
+  payload="$(jq -n \
+      --arg event_type "subagent_stopped" \
+      --arg stage      "$stage" \
+      --arg agent_id   "$agent_id" \
+      --arg agent_type "$agent_type" \
+      --arg started    "$started" \
+      --arg ended_at   "$(date -u +%FT%TZ)" \
+      --argjson epoch  "${epoch:-0}" \
+      '{event_type: $event_type, stage: $stage, epoch: $epoch,
+        agent_id: $agent_id, agent_type: $agent_type,
+        started: $started, ended_at: $ended_at}')" || return 0
   curl -sS --max-time 1 \
     -X POST "${server}/api/sessions/${sid}/activity" \
     -H "Content-Type: application/json" \
