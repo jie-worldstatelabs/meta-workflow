@@ -11,7 +11,7 @@
       "name": "stagent",
       "description": "Plan-Execute-Review development workflow with brainstorming, executor agent, and adversarial code review loop",
       "source": "./",
-      "version": "1.0.5"
+      "version": "1.0.6"
     }
   ]
 }

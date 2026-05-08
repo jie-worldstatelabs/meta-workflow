@@ -1,5 +1,5 @@
 {
   "name": "stagent",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Plan-Execute-Review development workflow with brainstorming, executor agent, and adversarial code review loop"
 }
