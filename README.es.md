@@ -21,7 +21,7 @@ claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin instal
 ¿Ya está instalado? Actualízalo con:
 
 ```
-claude plugin update stagent@stagent
+claude plugin marketplace update stagent && claude plugin update stagent@stagent
 ```
 
 Requiere: [Claude Code](https://claude.ai/claude-code), `jq`, `curl`, `git` (el modo cloud también se apoya en utilidades POSIX estándar como `sha256sum` / `shasum`).

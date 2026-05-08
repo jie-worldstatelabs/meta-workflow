@@ -21,7 +21,7 @@ claude plugin marketplace add jie-worldstatelabs/stagent && claude plugin instal
 已经安装过？更新插件：
 
 ```
-claude plugin update stagent@stagent
+claude plugin marketplace update stagent && claude plugin update stagent@stagent
 ```
 
 依赖：[Claude Code](https://claude.ai/claude-code)、`jq`、`curl`、`git`（cloud 模式还会用到 `sha256sum` / `shasum` 这类 POSIX 工具）。
