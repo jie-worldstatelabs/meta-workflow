@@ -9,20 +9,49 @@ description: |
   artifact with frontmatter that drives the state machine.
 model: sonnet
 # Tool surface — explicit allowlist. Claude Code does NOT auto-grant
-# deferred-tools (Agent / WebFetch / WebSearch / TaskCreate-family)
-# to subagents; without `Agent` declared here the workflow-subagent
+# deferred-tools (Agent / WebFetch / WebSearch / Task* / MCP) to
+# subagents; without `Agent` declared here the workflow-subagent
 # cannot fan out into parallel sub-subagents (investigate-style
 # stages), and the stage prompt's dispatch instructions silently
 # degrade.
-# TaskCreate/TaskUpdate/TaskList give the subagent the in-conversation
-# TODO tracker — useful for multi-step stages (fan-out collection,
-# multi-file refactors, multi-aspect reviews) where the stage protocol
-# has 3+ discrete sub-steps. Encourages explicit planning over freestyle
-# execution and helps prevent "subagent forgets to dispatch" failure
-# modes like the one investigate-stage hit when Agent itself was unavailable.
-# Skill is intentionally omitted — see CRITICAL section in
-# skills/stagent/SKILL.md (subagent must not invoke external skills).
-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, TaskCreate, TaskUpdate, TaskList
+#
+# Categories:
+#  • Standard FS / shell: Bash, Read, Write, Edit, Glob, Grep
+#  • Sub-subagent dispatch: Agent (REQUIRED for fan-out stages)
+#  • External research: WebFetch, WebSearch
+#  • In-conversation TODOs: TaskCreate / TaskUpdate / TaskList / TaskGet
+#    Used by multi-step stages (fan-out collection, multi-file refactors,
+#    multi-aspect reviews) to plan explicitly and avoid "agent skips a
+#    step" failure modes like the original investigate fan-out bug.
+#  • Long background commands: TaskOutput / TaskStop
+#    Required for stages that run > foreground-Bash timeout (e.g.
+#    `npm run build`, e2e suites, container builds, deploy commands).
+#    Pattern: Bash with run_in_background:true → TaskOutput to poll
+#    progress → TaskStop on hang/abort.
+#  • Notebook editing: NotebookEdit (data/ML stage tooling, no current
+#    workflow uses it but cheap to leave on)
+#  • MCP servers (read-mostly / observability):
+#      - mcp__plugin_playwright_playwright__* — browser automation, UI QA
+#      - mcp__plugin_context7_context7__*     — versioned library docs lookup
+#      - mcp__plugin_chrome-devtools-mcp_chrome-devtools__* — perf trace,
+#        network/console monitoring, accessibility audit
+#    Wildcard syntax assumed — verify with a test agent. If host doesn't
+#    accept `mcp__server__*` in tools allowlist, switch to explicit per-tool
+#    enumeration. Other MCPs (Stripe / Vercel / Google Drive / Stitch /
+#    OMC) are deliberately NOT included: they mutate external state and
+#    must be opted in by individual workflows that need them.
+#
+# Deliberately omitted:
+#  • Skill — see CRITICAL section in skills/stagent/SKILL.md (subagent
+#    must not invoke external skills).
+#  • AskUserQuestion — interruptible-stage user interaction is driven by
+#    the main agent; subagent prompting users would race with the
+#    awaiting_user state machine.
+#  • Monitor / PushNotification / Cron* / Team* / RemoteTrigger /
+#    SendMessage / ScheduleWakeup / EnterWorktree / EnterPlanMode —
+#    host-level / multi-session / stateful tools whose lifecycle outlasts
+#    a single stage. Subagent runs to completion synchronously.
+tools: Bash, Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, TaskCreate, TaskUpdate, TaskList, TaskGet, TaskOutput, TaskStop, NotebookEdit, mcp__plugin_playwright_playwright__*, mcp__plugin_context7_context7__*, mcp__plugin_chrome-devtools-mcp_chrome-devtools__*
 ---
 
 You are a stagent stage executor. Your job is to run **one stage** of a workflow and write its output artifact.
