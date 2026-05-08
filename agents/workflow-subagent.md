@@ -10,19 +10,21 @@ description: |
 model: sonnet
 # Tool surface — canonical Claude Code tools only.
 #
-# IMPORTANT: the `tools:` allowlist accepts the host's recognized
-# native-tool names. Unknown names are silently dropped (verified
-# empirically — `Task*` family + `mcp__*` wildcards declared in earlier
-# revisions were silently ignored). This list deliberately stays inside
-# the documented set:
-#   Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, NotebookEdit,
-#   WebFetch, WebSearch
+# IMPORTANT: `Agent` is intentionally NOT in this list. Per the Claude
+# Agent SDK docs (https://code.claude.com/docs/en/agent-sdk/subagents.md):
 #
-# Categories:
+#   "Subagents cannot spawn their own subagents.
+#    Don't include `Agent` in a subagent's `tools` array."
+#
+# This is an SDK-level depth limit (main → subagent allowed,
+# main → subagent → sub-subagent forbidden). Declaring `Agent` here
+# is silently dropped by the parser. Stages that need parallel
+# sub-investigation must run as `execution.type: "inline"` so the
+# MAIN agent does the fan-out — see parallel-research/investigate.md
+# for that pattern.
+#
+# Other categories:
 #  • FS / shell: Bash, Read, Write, Edit, Glob, Grep
-#  • Sub-subagent dispatch: Agent — REQUIRED for fan-out stages.
-#    `Agent` is the post-v2.1.63 canonical name; `Task` is a deprecated
-#    alias kept for back-compat — prefer `Agent`.
 #  • External research: WebFetch, WebSearch
 #  • Notebook editing: NotebookEdit
 #
@@ -41,7 +43,7 @@ model: sonnet
 #
 # Skill is intentionally omitted — see CRITICAL section in
 # skills/stagent/SKILL.md (subagent must not invoke external skills).
-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, WebFetch, WebSearch, NotebookEdit
+tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, NotebookEdit
 ---
 
 You are a stagent stage executor. Your job is to run **one stage** of a workflow and write its output artifact.
