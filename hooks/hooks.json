@@ -59,6 +59,15 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/plugin-path-rewrite.sh"
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ask-user-question-hook.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -77,6 +86,15 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/agent-ledger-add.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/ask-user-question-hook.sh"
           }
         ]
       },
