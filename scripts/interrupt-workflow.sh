@@ -71,7 +71,9 @@ fi
 # Hard cleanup — even if the slash command's TaskStop step is skipped,
 # the ledger entries must not survive interrupt; otherwise stop-hook
 # on the next /stagent:continue would see them and assume something
-# is still running.
+# is still running. Flush stopped events to cloud first so the webapp
+# flips each subagent's badge to done before the entries vanish.
+cloud_flush_pending_subagents "$RUN_DIR_NAME" "$LEDGER_DIR" || true
 rm -rf "$LEDGER_DIR" 2>/dev/null || true
 
 # Save current status as resume_status, then set interrupted.

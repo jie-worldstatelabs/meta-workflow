@@ -143,5 +143,24 @@ for f in "$LEDGER_DIR"/*.json; do
   fi
 done
 
+# Sync-subagent fallback: ledger never recorded an entry for this
+# subagent because agent-ledger-add.sh gates on isAsync (CC doesn't
+# return tool_response.agentId for sync Agent dispatches). But
+# SubagentStop still fires for sync subagents with `agent_id` in the
+# hook input — without this fallback the webapp's `stoppedAgents`
+# Map never receives a `subagent_stopped` event, so the badge stays
+# "running" forever. Pull stage/epoch from state.md; agent_type +
+# started are best-effort from the hook input.
+if [[ -n "$HOOK_AGENT_ID" ]] && [[ "$HOOK_AGENT_ID" != "null" ]] \
+   && is_cloud_session "$RUN_DIR_NAME" 2>/dev/null; then
+  HOOK_AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null)
+  STAGE=$(_read_fm_field "$STATE_FILE" status 2>/dev/null)
+  EPOCH=$(_read_fm_field "$STATE_FILE" epoch 2>/dev/null)
+  cloud_post_subagent_stopped \
+    "$CLOUD_SID" "${STAGE:-}" "${EPOCH:-0}" \
+    "$HOOK_AGENT_ID" "${HOOK_AGENT_TYPE:-}" "" \
+    >/dev/null 2>&1 || true
+fi
+
 rmdir "$LEDGER_DIR" 2>/dev/null || true
 exit 0

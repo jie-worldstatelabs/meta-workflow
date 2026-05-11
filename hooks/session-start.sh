@@ -58,7 +58,13 @@ if [[ -f "$LIB" ]]; then
     DESIRED_SESSION="$SID"
     if resolve_state >/dev/null 2>&1; then
       resolve_workflow_dir_from_state >/dev/null 2>&1
-      [[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.async-ledger"
+      if [[ -n "${TOPIC_DIR:-}" ]]; then
+        # Flush stopped events to cloud first so any pre-existing
+        # ledger entries that survived a hard exit get their badges
+        # flipped to done before the dir vanishes.
+        cloud_flush_pending_subagents "$RUN_DIR_NAME" "${TOPIC_DIR}/.async-ledger" || true
+        rm -rf "${TOPIC_DIR}/.async-ledger"
+      fi
     fi
   ) || true
 fi

@@ -227,7 +227,10 @@ mark_bootstrap_completed "$STATE_FILE"
 # stage couldn't have written its artifact otherwise). Any entries
 # still present are stale — agent-ledger-{add,remove}.sh hooks
 # didn't fire symmetrically (e.g. manual update-status, SubagentStop
-# missed). Wipe defensively so the next stage starts clean.
+# missed, sync subagent that never registered an add). Flush stopped
+# events to cloud first so the webapp's "running" badges flip to
+# done; then wipe defensively so the next stage starts clean.
+cloud_flush_pending_subagents "$RUN_DIR_NAME" "${TOPIC_DIR}/.async-ledger" || true
 rm -rf "${TOPIC_DIR}/.async-ledger" 2>/dev/null || true
 
 # Record the git HEAD seen by this workdir at transition time. continue-

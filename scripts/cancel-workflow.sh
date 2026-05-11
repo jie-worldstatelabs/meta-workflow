@@ -160,7 +160,9 @@ fi
 # Hard cleanup — local cancel branches below either rm -rf TOPIC_DIR
 # or archive it, but the cloud branch only wipes the shadow afterwards
 # and we want the ledger gone before any "are we still in flight?"
-# check elsewhere races.
+# check elsewhere races. Flush stopped events to cloud first so the
+# webapp flips each subagent's badge to done before the entries vanish.
+[[ -n "${TOPIC_DIR:-}" ]] && cloud_flush_pending_subagents "$RUN_DIR_NAME" "$LEDGER_DIR" || true
 [[ -n "${TOPIC_DIR:-}" ]] && rm -rf "$LEDGER_DIR" 2>/dev/null || true
 
 # Cloud mode: server is authoritative. Hit the cancel endpoint, wipe the

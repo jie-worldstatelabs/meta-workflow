@@ -1931,6 +1931,41 @@ cloud_post_subagent_stopped() {
   return 0
 }
 
+# Bulk-wipe helper: walk every .async-ledger entry under the given
+# directory and fire a `cloud_post_subagent_stopped` for each so the
+# webapp can flip those badges from running → done.
+#
+# Used by every site that bulk-removes the ledger dir without going
+# through the per-entry SubagentStop path (stage transition, cancel,
+# interrupt, cross-machine continue, session-start recovery). Without
+# this, those code paths leave the webapp UI showing "running" forever
+# on subagents that the runtime considers gone.
+#
+# Best-effort, silent — never errors. Caller still owns the rm -rf.
+#
+# Args: sid ledger_dir
+cloud_flush_pending_subagents() {
+  local sid="$1" ledger_dir="$2"
+  [[ -z "$sid" ]] && return 0
+  [[ -d "$ledger_dir" ]] || return 0
+  is_cloud_session "$sid" 2>/dev/null || return 0
+  local f rec_agent_id rec_agent_type rec_stage rec_epoch rec_started
+  for f in "$ledger_dir"/*.json; do
+    [[ -f "$f" ]] || continue
+    rec_agent_id=$(jq -r '.agent_id // ""' "$f" 2>/dev/null)
+    [[ -z "$rec_agent_id" ]] || [[ "$rec_agent_id" == "null" ]] && continue
+    rec_agent_type=$(jq -r '.subagent_type // ""' "$f" 2>/dev/null)
+    rec_stage=$(jq -r '.stage // ""' "$f" 2>/dev/null)
+    rec_epoch=$(jq -r '.epoch // 0' "$f" 2>/dev/null)
+    rec_started=$(jq -r '.started // ""' "$f" 2>/dev/null)
+    cloud_post_subagent_stopped \
+      "$sid" "$rec_stage" "$rec_epoch" \
+      "$rec_agent_id" "$rec_agent_type" "$rec_started" \
+      >/dev/null 2>&1 || true
+  done
+  return 0
+}
+
 # Record the prompt context a workflow subagent received for a
 # specific (stage, epoch) run. The webapp surfaces this under the
 # "Runtime prompt" panel.

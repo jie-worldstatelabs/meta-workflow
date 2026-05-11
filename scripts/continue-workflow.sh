@@ -346,7 +346,15 @@ fi
 # (cross-machine takeover). Either way, those subagents are
 # unreachable from here — keeping the entries around would only
 # trick stop-hook into believing something is still running.
-[[ -n "${TOPIC_DIR:-}" ]] && rm -rf "${TOPIC_DIR}/.async-ledger" 2>/dev/null || true
+if [[ -n "${TOPIC_DIR:-}" ]]; then
+  # Flush stopped events to cloud first so the webapp flips each
+  # surviving badge to done before the entries vanish. The subagents
+  # those entries pointed to are unreachable from this resume context
+  # (different process tree, possibly different machine), so we
+  # consider them definitively stopped.
+  cloud_flush_pending_subagents "$RUN_DIR_NAME" "${TOPIC_DIR}/.async-ledger" || true
+  rm -rf "${TOPIC_DIR}/.async-ledger" 2>/dev/null || true
+fi
 
 # Restore active status. On an interrupted-style resume this flips
 # back to the saved resume_status; on a cloud cross-machine takeover
