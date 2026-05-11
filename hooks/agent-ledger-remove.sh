@@ -39,7 +39,12 @@ fi
 resolve_workflow_dir_from_state >/dev/null 2>&1 || true
 
 LEDGER_DIR="$(dirname "$STATE_FILE")/.async-ledger"
-[[ -d "$LEDGER_DIR" ]] || exit 0
+# Note: we no longer early-exit on a missing ledger dir. Sync subagents
+# never register an entry (agent-ledger-add.sh's isAsync gate skips
+# them), so the dir might not exist at all — but SubagentStop still
+# fires for them with `agent_id` in the hook input, and the fallback
+# POST below needs to run regardless of ledger state to flip the
+# webapp's badge from running → done.
 
 HOOK_TRANSCRIPT=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // ""' 2>/dev/null)
 HOOK_AGENT_ID=$(echo "$HOOK_INPUT" | jq -r '
@@ -82,66 +87,70 @@ _finalize_match() {
   rmdir "$LEDGER_DIR" 2>/dev/null || true
 }
 
-# Fast path: ledger files are keyed by agent_id, so if we got an
-# agent_id from the hook we can attempt a direct file lookup. Only
-# finalize after also confirming transcript_path identity when both
-# signals are present (defense against stale entries with reused
-# ids). When only one signal is present, that one decides.
-if [[ -n "$HOOK_AGENT_ID" ]] && [[ "$HOOK_AGENT_ID" != "null" ]]; then
-  CANDIDATE="${LEDGER_DIR}/${HOOK_AGENT_ID}.json"
-  if [[ -f "$CANDIDATE" ]]; then
-    if [[ -n "$HOOK_TRANSCRIPT_REAL" ]]; then
-      REC_OUTPUT=$(jq -r '.transcript_output // ""' "$CANDIDATE" 2>/dev/null)
-      REC_REAL=""
-      if [[ -n "$REC_OUTPUT" ]] && [[ "$REC_OUTPUT" != "null" ]]; then
-        REC_REAL=$(readlink -f "$REC_OUTPUT" 2>/dev/null || true)
-      fi
-      if [[ -n "$REC_REAL" ]] && [[ "$REC_REAL" != "$HOOK_TRANSCRIPT_REAL" ]]; then
-        # ID matches but transcript differs — bystander collision,
-        # do nothing. Fall through to slow-path scan in case the real
-        # match lives elsewhere.
-        :
+# Ledger scan only runs when the dir exists. Sync subagents skip
+# this whole block and fall through to the fallback POST below.
+if [[ -d "$LEDGER_DIR" ]]; then
+  # Fast path: ledger files are keyed by agent_id, so if we got an
+  # agent_id from the hook we can attempt a direct file lookup. Only
+  # finalize after also confirming transcript_path identity when both
+  # signals are present (defense against stale entries with reused
+  # ids). When only one signal is present, that one decides.
+  if [[ -n "$HOOK_AGENT_ID" ]] && [[ "$HOOK_AGENT_ID" != "null" ]]; then
+    CANDIDATE="${LEDGER_DIR}/${HOOK_AGENT_ID}.json"
+    if [[ -f "$CANDIDATE" ]]; then
+      if [[ -n "$HOOK_TRANSCRIPT_REAL" ]]; then
+        REC_OUTPUT=$(jq -r '.transcript_output // ""' "$CANDIDATE" 2>/dev/null)
+        REC_REAL=""
+        if [[ -n "$REC_OUTPUT" ]] && [[ "$REC_OUTPUT" != "null" ]]; then
+          REC_REAL=$(readlink -f "$REC_OUTPUT" 2>/dev/null || true)
+        fi
+        if [[ -n "$REC_REAL" ]] && [[ "$REC_REAL" != "$HOOK_TRANSCRIPT_REAL" ]]; then
+          # ID matches but transcript differs — bystander collision,
+          # do nothing. Fall through to slow-path scan in case the real
+          # match lives elsewhere.
+          :
+        else
+          _finalize_match "$CANDIDATE"
+          exit 0
+        fi
       else
         _finalize_match "$CANDIDATE"
         exit 0
       fi
-    else
-      _finalize_match "$CANDIDATE"
-      exit 0
     fi
   fi
-fi
 
-# Slow path: scan all entries and match by transcript_path identity
-# (the agent_id-keyed file may not exist if CC's id field name
-# changed and the hook recorded a different shape).
-for f in "$LEDGER_DIR"/*.json; do
-  [[ -f "$f" ]] || continue
+  # Slow path: scan all entries and match by transcript_path identity
+  # (the agent_id-keyed file may not exist if CC's id field name
+  # changed and the hook recorded a different shape).
+  for f in "$LEDGER_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
 
-  match=0
+    match=0
 
-  if [[ -n "$HOOK_TRANSCRIPT_REAL" ]]; then
-    REC_OUTPUT=$(jq -r '.transcript_output // ""' "$f" 2>/dev/null)
-    if [[ -n "$REC_OUTPUT" ]] && [[ "$REC_OUTPUT" != "null" ]]; then
-      REC_REAL=$(readlink -f "$REC_OUTPUT" 2>/dev/null || true)
-      if [[ -n "$REC_REAL" ]] && [[ "$REC_REAL" == "$HOOK_TRANSCRIPT_REAL" ]]; then
+    if [[ -n "$HOOK_TRANSCRIPT_REAL" ]]; then
+      REC_OUTPUT=$(jq -r '.transcript_output // ""' "$f" 2>/dev/null)
+      if [[ -n "$REC_OUTPUT" ]] && [[ "$REC_OUTPUT" != "null" ]]; then
+        REC_REAL=$(readlink -f "$REC_OUTPUT" 2>/dev/null || true)
+        if [[ -n "$REC_REAL" ]] && [[ "$REC_REAL" == "$HOOK_TRANSCRIPT_REAL" ]]; then
+          match=1
+        fi
+      fi
+    fi
+
+    if [[ "$match" -eq 0 ]] && [[ -n "$HOOK_AGENT_ID" ]] && [[ "$HOOK_AGENT_ID" != "null" ]]; then
+      REC_ID=$(jq -r '.agent_id // ""' "$f" 2>/dev/null)
+      if [[ -n "$REC_ID" ]] && [[ "$REC_ID" == "$HOOK_AGENT_ID" ]]; then
         match=1
       fi
     fi
-  fi
 
-  if [[ "$match" -eq 0 ]] && [[ -n "$HOOK_AGENT_ID" ]] && [[ "$HOOK_AGENT_ID" != "null" ]]; then
-    REC_ID=$(jq -r '.agent_id // ""' "$f" 2>/dev/null)
-    if [[ -n "$REC_ID" ]] && [[ "$REC_ID" == "$HOOK_AGENT_ID" ]]; then
-      match=1
+    if [[ "$match" -eq 1 ]]; then
+      _finalize_match "$f"
+      exit 0
     fi
-  fi
-
-  if [[ "$match" -eq 1 ]]; then
-    _finalize_match "$f"
-    exit 0
-  fi
-done
+  done
+fi
 
 # Sync-subagent fallback: ledger never recorded an entry for this
 # subagent because agent-ledger-add.sh gates on isAsync (CC doesn't
