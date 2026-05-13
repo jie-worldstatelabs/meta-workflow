@@ -1,9 +1,10 @@
-# Stagent Workflow Schema — Planning-Stage Cheatsheet
+# Stagent Workflow Cheatsheet — Schema + Claude Code Runtime Constraints
 
-This is your **internal toolkit reference** — you (the planning stage
-Claude) read this so you know what's available. You still talk to the
-user in plain language; they don't need to hear these field names.
-Use this to spot *where* a user design choice maps to a schema lever.
+This is your **internal toolkit reference** — you (the create-workflow
+planner or writer) read this so you know what's available. The schema +
+runtime tables apply to both stages; the sections tagged `[Planner]`
+are only relevant when you're the planner talking to the user. Writers
+can skim those.
 
 ---
 
@@ -14,7 +15,7 @@ Use this to spot *where* a user design choice maps to a schema lever.
 | `initial_stage` | yes | Stage name where the run begins |
 | `terminal_stages` | yes | Array of result values that end the workflow. Convention: `["complete", "escalated", "cancelled"]` |
 | `stages` | yes | Object keyed by stage name |
-| `max_epoch` | no (default 20) | Cap on FAIL→retry loops; forces `escalated` when exceeded. Only meaningful if the workflow has loop-back edges (e.g. `verify FAIL → execute`). Ask the user to consider a lower cap when a loop is expensive. |
+| `max_epoch` | no (default 20) | Cap on FAIL→retry loops; forces `escalated` when exceeded. Only meaningful if the workflow has loop-back edges (e.g. `verify FAIL → execute`). *Planner: ask the user to consider a lower cap when a loop is expensive. Writer: emit only what the plan specifies.* |
 | `modifies_worktree` | no (default true) | Set to `false` when the workflow writes **nothing** to the project dir. Example: `create-workflow` (writes to `~/.config/stagent/`), `publish-workflow` (pure HTTP calls). When `false`, the plugin skips worktree-diff capture and UI hides the diff panel. |
 | `run_files` | no | `{name: {description, init}}`. Each `init` is a shell command run at setup; stdout becomes the file content. Use for setup-time constants (git SHA baseline, current date, env var snapshot). Stages read them via `from_run_file`. |
 
@@ -31,7 +32,7 @@ Use this to spot *where* a user design choice maps to a schema lever.
 
 ---
 
-## Design levers to proactively consider
+## [Planner] Design levers — map user-described needs to schema
 
 When the user describes what they want, listen for these signals:
 
@@ -69,7 +70,7 @@ crash at runtime. Plan around them.
 
 These constraints are NOT enforced by `setup-workflow.sh --validate-only`.
 A workflow that violates them will validate, publish, and then fail when
-a user tries to run it. Catch them at planning time.
+a user tries to run it. Catch them at design and write time.
 
 ---
 
@@ -86,7 +87,7 @@ a user tries to run it. Catch them at planning time.
 
 ---
 
-## Things to NOT bother the user about
+## [Planner] Things to NOT bother the user about
 
 These are implementation details with sane defaults — pick silently:
 
@@ -95,4 +96,4 @@ These are implementation details with sane defaults — pick silently:
 - Default model for subagents → sonnet (pick opus only for clearly heavy stages; haiku for clearly cheap)
 - Stage `.md` file names → always `<stage>.md` matching the stage key
 
-Use these defaults silently in the plan; the user sees the structure, not the boilerplate.
+Use these defaults silently in the plan; the user sees the structure, not the boilerplate. (Writers: the plan already encodes these decisions — just emit them.)
