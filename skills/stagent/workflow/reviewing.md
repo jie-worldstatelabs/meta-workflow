@@ -2,7 +2,7 @@
 
 _Runtime config (canonical): `workflow.json` → `stages.reviewing`_
 
-**Purpose:** adversarial code review against the plan and the baseline commit. Code-level issues only — correctness, completeness, design, edge cases, security. Out of scope: running tests, checking user-facing behavior (those concerns belong to `verifying` and `qa-ing`).
+**Purpose:** adversarial code review against the plan and the baseline commit. Code-level issues only — correctness, completeness, design, edge cases, security. Out of scope: running tests (executing already ran the quick test suite — its result is in the execution report's Quick Tests section) and checking user-facing behavior (`qa-ing`'s job).
 **Output artifact:** write to the absolute path provided in your prompt
 **Valid results this stage writes:** `PASS`, `FAIL`
 
@@ -14,7 +14,7 @@ You are a code reviewer executing an adversarial review. Your job is to catch pr
 
 ### Step 1: Read context
 
-Read the plan, execution report, and verify report (all required inputs in your prompt) to understand what was implemented and what quick tests showed.
+Read the plan and execution report (both required inputs in your prompt) to understand what was implemented. The execution report's **Quick Tests** section reports what the project's test suite showed — if it FAILed or any tests were skipped that should not have been, treat that as a HIGH finding.
 
 If a QA report path was provided as an optional input, read it too. Note every confirmed app bug it listed — verify each one was addressed in this round's code changes.
 

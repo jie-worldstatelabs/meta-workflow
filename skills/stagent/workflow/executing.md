@@ -24,11 +24,45 @@ You are a senior software engineer executing an implementation plan for a webapp
    - Make minimal, focused changes — do not refactor unrelated code
    - Handle errors comprehensively
    - Validate inputs at system boundaries
-5. **Self-check** — before reporting:
-   - Run the project's quick test suite
+5. **Run quick tests** — see the next section ("Quick Tests"). The test command is auto-detected; run it before reporting.
+6. **Self-check** — before reporting:
+   - Confirm tests ran (or were skipped because no command was found) and capture the output
    - Verify the build succeeds
    - Confirm every plan item is addressed
    - If reviewer or QA feedback was provided, verify each issue is resolved
+
+## Quick Tests
+
+Run the project's quick test suite (unit / integration / type-check) before reporting. This is part of executing's responsibility — the downstream reviewer will gate on the result.
+
+### Detect the command
+
+Check the project root in this order, first match wins:
+
+| Detect | Command |
+|--------|---------|
+| `package.json` with a `"test"` script | `npm test` |
+| `pyproject.toml` with `[tool.pytest]` (or `pytest.ini`) | `pytest` |
+| `go.mod` | `go test ./...` |
+| `Makefile` with a `test` target | `make test` |
+| None of the above | record `SKIPPED` — no command available |
+
+### Run
+
+```bash
+cd <project-directory> && <test-command> 2>&1
+```
+
+Use a 3-minute timeout (`timeout: 180000`). Capture the full output.
+
+### Report results in the body
+
+The execution report's **Quick Tests** section (see frontmatter template below) MUST include:
+- the command you ran (or "SKIPPED — no test command detected")
+- pass / fail summary
+- the tail of the output (~last 100 lines if long)
+
+Do NOT use a separate result key — the artifact still writes `result: done` regardless of test outcome. The downstream reviewer reads this section and FAILs the review if tests didn't pass; the loop comes back to executing automatically.
 
 ## Execution Report
 
@@ -57,8 +91,13 @@ result: done
 - [ ] <app bug 1> — <how it was resolved>
 ...
 
-## Test Results
-<output summary of test runs>
+## Quick Tests
+- Command: <command, or "SKIPPED — no test command detected">
+- Result: PASS | FAIL | SKIPPED
+- Output (tail):
+```
+<last ~100 lines of test output>
+```
 
 ## Build Status
 <pass/fail, any warnings>

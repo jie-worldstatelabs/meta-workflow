@@ -48,11 +48,36 @@ When the user describes what they want, listen for these signals:
 
 ---
 
+## Claude Code runtime constraints (NOT validator-checked)
+
+The validator only checks structural JSON correctness. The constraints
+below come from how Claude Code actually executes the stages — violating
+them produces valid-but-broken workflows that pass validation and then
+crash at runtime. Plan around them.
+
+| Constraint | Why it exists | Design rule |
+|---|---|---|
+| **Subagent stages cannot dispatch sub-subagents** | The `Agent` / `Task` tool is reserved for the main agent. `stagent:workflow-subagent` runs with a fixed allowlist that excludes it. | Any "fan-out N parallel researchers / reviewers / map-reduce workers" pattern MUST live in an `inline` stage (where the main agent can call `Task` itself). A subagent stage that needs concurrency has to use shell-level parallelism (`&` + `wait`). |
+| **Subagent stages cannot ask the user questions** | `AskUserQuestion` is a main-agent-only tool. Subagents have no UI surface. | Any human-in-the-loop gate (approval, clarification, "which option?") MUST be an **interruptible inline** stage. Reserve subagent stages for autonomous heads-down work. |
+| **Subagent stages start with an empty conversation** | The subagent only sees the prompt the plugin builds (this `.md` file + paths to input artifacts). No main-agent chat history. | If downstream needs the subagent's reasoning, the stage prompt MUST tell the subagent to write that reasoning into its **output artifact**. The artifact is the entire handoff. |
+| **Subagent tool allowlist is fixed** | `stagent:workflow-subagent` ships with `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `NotebookEdit`. No `Agent`, no `AskUserQuestion`, no MCP-only tools, no custom slash-commands. | If a stage needs a tool outside this set (e.g. project MCP server, custom command), it MUST be an inline stage. |
+| **Subagent stages run once, then end** | There is no background subagent or daemon. The invocation terminates when `result:` is written. | "Watch this file" / "keep polling until X" don't work in subagent stages. Use **inline interruptible** with explicit pause points, or split the wait into kick-off + check stages. |
+| **Stop hook can't fire inside a subagent** | The main agent blocks on `Agent` until the subagent returns. (This is what the `subagent ⇒ interruptible:false` rule below codifies.) | Subagent stages must drive themselves to a terminal `result:` in one pass — no "pause and wait for the user." |
+| **Loop-back stages do NOT roll back prior-epoch side effects** | When `FAIL → retry` rewinds, files written, commits made, hub publishes from the previous epoch are still there. | Stage prompts touching external state should either (a) check current state and no-op when already done, or (b) clean up first. Treat every stage entry as "epoch N may already have effects from epoch N-1." |
+| **Bash defaults to a 2-minute timeout** | Same Bash tool, same default cap, in both inline and subagent stages. | Slow steps (build, big test suite, network sync) must use `run_in_background: true` and check status, OR be split across kick-off + wait stages. |
+| **Subagent context window is bounded (~200K tokens)** | Same Claude limits. Loading 80 files into context blows it. | Stage prompts for subagent stages must explicitly tell the subagent what to read (`from_stage` inputs + named files), NOT "scan the whole repo." |
+
+These constraints are NOT enforced by `setup-workflow.sh --validate-only`.
+A workflow that violates them will validate, publish, and then fail when
+a user tries to run it. Catch them at planning time.
+
+---
+
 ## Hard rules the validator enforces (don't violate)
 
 - Subagent stages → `interruptible: false` always
 - Stage `<name>.md` file lives **directly next to** `workflow.json` (not in a `stages/` subdir)
-- Every `from_stage` reference must name a declared stage
+- Every `from_stage` reference must name a declared stage; every `from_run_file` reference must name a key in top-level `run_files`
 - Every transition target must be a declared stage OR a value in `terminal_stages`
 - Terminal stage names go ONLY in the `terminal_stages` array — do NOT also add them as keys in `stages`
 - `transitions` values are plain strings, not nested objects like `{"target":"x"}`

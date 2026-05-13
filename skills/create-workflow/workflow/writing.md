@@ -20,33 +20,39 @@ Read every input path from your prompt — do NOT construct or hardcode paths.
 
 ## Read the plugin's canonical reference first
 
-Run this Bash call so the canonical schema and stage-file style flow into your context:
+Run this Bash call so the canonical schema, runtime constraints, and stage-file style all flow into your context:
 
 ````bash
 P=$(cat ~/.config/stagent/plugin-root 2>/dev/null)
 [[ -n $P && -d $P/scripts ]] || P=$(ls -d ~/.claude/plugins/cache/*/stagent/*/ 2>/dev/null | head -1)
-for f in workflow.json planning.md executing.md reviewing.md verifying.md qa-ing.md run_files_catalog.md; do
+# Schema + Claude Code runtime constraints — the single source of truth.
+echo "===== schema-cheatsheet.md ====="
+cat "$P/skills/create-workflow/workflow/schema-cheatsheet.md"
+echo
+# Shape + style reference — copy the JSON shape and the stage-file
+# voice, NOT the specific stage identities (your workflow uses whatever
+# names the plan defines).
+for f in workflow.json planning.md executing.md reviewing.md qa-ing.md deploy.md readme.md; do
   echo "===== $f ====="; cat "$P/skills/stagent/workflow/$f"; echo
 done
 ````
 
 Copy the JSON **shape** and the stage-file **style** — NOT the specific stage identities. Your workflow uses whatever names the plan defines.
 
-## Schema constraints (the validator enforces all of these)
+## Writer-specific reminders
 
-- Top-level keys are exactly: `initial_stage`, `terminal_stages`, `max_epoch` (optional), `modifies_worktree` (optional), `run_files` (optional), `stages`. Do NOT add `name`, `version`, `description`, or any other top-level field.
-- `max_epoch`: optional integer, default `20`. `update-status.sh` forces `status=escalated` once a stage transition would push the epoch to or past this cap — breaks runaway FAIL→retry loops. Requires `escalated` in `.terminal_stages`; otherwise the cap is skipped with a warning.
-- `modifies_worktree`: optional boolean, default `true`. Set to `false` when the workflow writes nothing into the project worktree (e.g. writes only to `~/.config/` or makes pure HTTP calls). When `false`, the plugin skips worktree-diff capture and the UI hides the diff panel. **Read the plan's "Workflow-level flags" section** — if the planner listed non-default values there, emit them in `workflow.json`; otherwise omit them entirely.
-- `.stages` is a JSON **object keyed by stage name** (NOT an array of `{id,...}`).
-- Each stage has exactly these keys: `interruptible` (bool), `execution` (`{"type":"inline"}` or `{"type":"subagent","model":"opus|sonnet|haiku"}` — model optional), `transitions` (object), `inputs` (object with `required` and `optional` arrays).
-- `transitions` values are plain strings (`"done": "next-stage"`) — NEVER nested objects like `{"target":"next"}` or `{"id":"done","nextStage":"next"}`.
-- `inputs.required[]` / `inputs.optional[]` entries are `{from_stage, description}` or `{from_run_file, description}` — nothing else.
-- **Subagent stages MUST have `"interruptible": false`** (the main agent blocks on the Agent tool, so the stop hook can't fire during a subagent run).
-- NO `subagent_type` field — validator rejects it. All subagent stages run under the generic `stagent:workflow-subagent`.
-- Every declared stage MUST have a corresponding `<stage>.md` file placed **directly next to `workflow.json`** — NOT in a `stages/` subdirectory.
-- Every transition target must be another declared stage name OR a terminal stage name (`complete`, `escalated`, `cancelled` are conventional).
-- Every `from_stage` reference must name a declared stage; every `from_run_file` reference must name a key in top-level `.run_files`.
-- Terminal stage names go in `.terminal_stages` array ONLY — do NOT also add them as keys under `.stages`.
+The cheatsheet above is the canonical list of schema rules and runtime
+constraints — don't restate it here. The bullets below are only the
+writer-specific bits that don't fit in a planner-facing reference:
+
+- **`max_epoch` ↔ `escalated`** — if the plan sets `max_epoch`, the workflow MUST include `"escalated"` in `terminal_stages` for the cap to actually take effect. Otherwise the validator warns and the cap is silently skipped.
+- **Read the plan's "Workflow-level flags" section** — emit `max_epoch` / `modifies_worktree` in `workflow.json` ONLY if the planner listed them with non-default values. If the section is missing or empty, omit those fields entirely (defaults apply).
+- **Translating the runtime constraints into stage `.md` bodies** — the cheatsheet's "Claude Code runtime constraints" table is design-time. When you write the prose body of each `<stage>.md`, also enforce them at the instruction level:
+  - Subagent stage bodies must NOT instruct the agent to use `Task` / `Agent` / `AskUserQuestion` (the subagent doesn't have those tools).
+  - Subagent stage bodies must NOT reference "the conversation" or "what the user said earlier" — only input artifact paths.
+  - Slow `Bash` calls in any stage body should use `run_in_background: true` (2-min default timeout).
+  - Loop-back stages must be idempotent — prefer `Write` (overwrite) over `Edit`-with-assumptions about prior epoch state.
+- If the plan would force a runtime-constraint violation (e.g. parks a "fan out 5 reviewers in parallel" phase in a `subagent` stage), surface it in the writer report under a `## Plan concerns` section instead of silently writing a broken workflow.
 
 ## Writing protocol
 
@@ -174,8 +180,6 @@ result: done
 ## Rules
 
 - Do NOT skip the post-write sanity check — it's the guard against missing stage files or wrong-filename bugs.
-- Do NOT put stage `.md` files inside a subdirectory — they go next to `workflow.json`.
-- Do NOT invent top-level or per-stage schema fields not listed above.
 - Do NOT call `setup-workflow.sh --validate-only` yourself — that is the next stage's job.
 - If validator feedback is provided, address every `❌` line. If a line can't be addressed, document why in the report's "Validator feedback addressed" section rather than silently dropping it.
 - If final_review feedback is provided, treat it as the highest-priority change list — overrides the planner's original design where they conflict (the user has seen the published draft and is asking for changes against IT, not against the original plan). Address every point and document it in "User feedback addressed".

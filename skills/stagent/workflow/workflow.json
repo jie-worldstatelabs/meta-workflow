@@ -1,6 +1,10 @@
 {
   "initial_stage": "planning",
-  "terminal_stages": ["complete", "escalated", "cancelled"],
+  "terminal_stages": [
+    "complete",
+    "escalated",
+    "cancelled"
+  ],
   "max_epoch": 20,
   "modifies_worktree": true,
   "run_files": {
@@ -12,7 +16,9 @@
   "stages": {
     "planning": {
       "interruptible": true,
-      "execution": { "type": "inline" },
+      "execution": {
+        "type": "inline"
+      },
       "transitions": {
         "approved": "executing"
       },
@@ -28,30 +34,25 @@
         "model": "opus"
       },
       "transitions": {
-        "done": "verifying"
+        "done": "reviewing"
       },
       "inputs": {
         "required": [
-          { "from_stage": "planning", "description": "Implementation plan" }
+          {
+            "from_stage": "planning",
+            "description": "Implementation plan"
+          }
         ],
         "optional": [
-          { "from_stage": "reviewing", "description": "Reviewer feedback from the previous iteration" },
-          { "from_stage": "qa-ing",    "description": "QA feedback from the previous iteration" },
-          { "from_stage": "verifying", "description": "Quick-test failures from the previous iteration" }
+          {
+            "from_stage": "reviewing",
+            "description": "Reviewer feedback from the previous iteration"
+          },
+          {
+            "from_stage": "qa-ing",
+            "description": "QA feedback from the previous iteration"
+          }
         ]
-      }
-    },
-    "verifying": {
-      "interruptible": false,
-      "execution": { "type": "inline" },
-      "transitions": {
-        "PASS": "reviewing",
-        "FAIL": "executing",
-        "SKIPPED": "reviewing"
-      },
-      "inputs": {
-        "required": [],
-        "optional": []
       }
     },
     "reviewing": {
@@ -65,13 +66,24 @@
       },
       "inputs": {
         "required": [
-          { "from_stage": "planning",    "description": "Plan to review against" },
-          { "from_stage": "executing",   "description": "Execution report" },
-          { "from_stage": "verifying",   "description": "Verify report" },
-          { "from_run_file": "baseline", "description": "Git SHA at workflow start — for diffing changes" }
+          {
+            "from_stage": "planning",
+            "description": "Plan to review against"
+          },
+          {
+            "from_stage": "executing",
+            "description": "Execution report"
+          },
+          {
+            "from_run_file": "baseline",
+            "description": "Git SHA at workflow start — for diffing changes"
+          }
         ],
         "optional": [
-          { "from_stage": "qa-ing", "description": "QA report from the previous iteration" }
+          {
+            "from_stage": "qa-ing",
+            "description": "QA report from the previous iteration"
+          }
         ]
       }
     },
@@ -86,21 +98,32 @@
       },
       "inputs": {
         "required": [
-          { "from_stage": "planning", "description": "Plan with journey test spec" }
+          {
+            "from_stage": "planning",
+            "description": "Plan with journey test spec"
+          }
         ],
         "optional": []
       }
     },
     "deploy": {
       "interruptible": true,
-      "execution": { "type": "inline" },
+      "execution": {
+        "type": "inline"
+      },
       "transitions": {
         "deployed": "complete"
       },
       "inputs": {
         "required": [
-          { "from_stage": "planning", "description": "Plan (read for project name, framework, env vars)" },
-          { "from_stage": "qa-ing",   "description": "QA verdict — must be PASS to reach this stage" }
+          {
+            "from_stage": "planning",
+            "description": "Plan (read for project name, framework, env vars)"
+          },
+          {
+            "from_stage": "qa-ing",
+            "description": "QA verdict — must be PASS to reach this stage"
+          }
         ],
         "optional": []
       }

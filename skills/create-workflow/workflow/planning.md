@@ -46,7 +46,8 @@ Use the `description` from `setup_context` as the user's request. If it's empty 
 
 - What kind of work does this workflow orchestrate? (coding, writing, data analysis, review, research, etc.)
 - What are the rough phases? A 3-line sketch is enough — you'll refine it below.
-- Any phase where the user should pause for input? → interruptible inline stage.
+- Any phase where the user should pause for input, answer a question, or approve something? → `interruptible: true` + `inline` execution. Subagents have no UI and can't call `AskUserQuestion`.
+- Any phase that needs to **fan out N parallel subagents** (5 researchers, 3 reviewers, map-reduce)? → that phase MUST be `inline` execution. Subagents can't dispatch sub-subagents — the `Agent`/`Task` tool is main-agent-only.
 - Any phase that benefits from a stronger model? → subagent stage with `model: opus` (or leave model unspecified for sonnet default).
 - Any external validation / test run? → subagent or inline stage that runs a command.
 - What's the success terminal? (usually `complete`.)
