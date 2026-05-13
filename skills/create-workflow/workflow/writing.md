@@ -20,30 +20,33 @@ Read every input path from your prompt — do NOT construct or hardcode paths.
 
 ## Read the plugin's canonical reference first
 
-Run this Bash call so the canonical schema, runtime constraints, and stage-file style all flow into your context:
+<HARD-GATE>
+**MANDATORY first step.** Invoke the entire bash block below as **one single Bash tool call** — do NOT split it across multiple invocations, do NOT drop the toolkit `cat`s at the top, do NOT skip ahead to writing files. The toolkit references (schema-cheatsheet + run_files_catalog) are the difference between a workflow that passes validation and one that loops on `from_run_file` / schema-shape mistakes the validator catches but you could have avoided.
+</HARD-GATE>
 
 ````bash
 P=$(cat ~/.config/stagent/plugin-root 2>/dev/null)
 [[ -n $P && -d $P/scripts ]] || P=$(ls -d ~/.claude/plugins/cache/*/stagent/*/ 2>/dev/null | head -1)
-# Writer toolkit (lives in create-workflow/ — schema rules, Claude Code
-# runtime constraints, and the run_files patterns reference).
-echo "===== schema-cheatsheet.md ====="
-cat "$P/skills/create-workflow/workflow/schema-cheatsheet.md"
-echo
-echo "===== run_files_catalog.md ====="
-cat "$P/skills/create-workflow/workflow/run_files_catalog.md"
-echo
-# Demo workflow — shape and stage-file voice reference. Copy the JSON
-# shape and the prose voice, NOT the specific stage identities (your
-# workflow uses whatever names the plan defines). readme.md isn't in
-# this loop — writing.md's own `## Readme shape` section already gives
-# the template.
+# Single chained invocation. && between the cats so it reads as ONE
+# atomic action — please don't break this into separate tool calls.
+echo "===== TOOLKIT: schema-cheatsheet.md =====" && \
+cat "$P/skills/create-workflow/workflow/schema-cheatsheet.md" && \
+echo && \
+echo "===== TOOLKIT: run_files_catalog.md =====" && \
+cat "$P/skills/create-workflow/workflow/run_files_catalog.md" && \
+echo && \
+echo "===== DEMO SHAPE/STYLE REFERENCE =====" && \
 for f in workflow.json planning.md executing.md reviewing.md qa-ing.md deploy.md; do
-  echo "===== $f ====="; cat "$P/skills/stagent/workflow/$f"; echo
-done
+  echo "===== $f ====="
+  cat "$P/skills/stagent/workflow/$f"
+  echo
+done && \
+echo "===== TOOLKIT + DEMO REFERENCE LOADED ====="
 ````
 
-Copy the JSON **shape** and the stage-file **style** — NOT the specific stage identities. Your workflow uses whatever names the plan defines.
+You'll know the block ran end-to-end when you see the final `===== TOOLKIT + DEMO REFERENCE LOADED =====` line. If you don't see that line in the output, re-run the entire block — partial loads of the canonical reference produce broken workflows.
+
+Copy the JSON **shape** and the stage-file **voice** — NOT the specific stage identities. Your workflow uses whatever names the plan defines. The toolkit refs (cheatsheet + catalog) are normative; the demo files are illustrative.
 
 ## Writer-specific reminders
 
