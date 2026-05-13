@@ -25,14 +25,20 @@ Run this Bash call so the canonical schema, runtime constraints, and stage-file 
 ````bash
 P=$(cat ~/.config/stagent/plugin-root 2>/dev/null)
 [[ -n $P && -d $P/scripts ]] || P=$(ls -d ~/.claude/plugins/cache/*/stagent/*/ 2>/dev/null | head -1)
-# Schema + Claude Code runtime constraints — the single source of truth.
+# Writer toolkit (lives in create-workflow/ — schema rules, Claude Code
+# runtime constraints, and the run_files patterns reference).
 echo "===== schema-cheatsheet.md ====="
 cat "$P/skills/create-workflow/workflow/schema-cheatsheet.md"
 echo
-# Shape + style reference — copy the JSON shape and the stage-file
-# voice, NOT the specific stage identities (your workflow uses whatever
-# names the plan defines).
-for f in workflow.json planning.md executing.md reviewing.md qa-ing.md deploy.md readme.md; do
+echo "===== run_files_catalog.md ====="
+cat "$P/skills/create-workflow/workflow/run_files_catalog.md"
+echo
+# Demo workflow — shape and stage-file voice reference. Copy the JSON
+# shape and the prose voice, NOT the specific stage identities (your
+# workflow uses whatever names the plan defines). readme.md isn't in
+# this loop — writing.md's own `## Readme shape` section already gives
+# the template.
+for f in workflow.json planning.md executing.md reviewing.md qa-ing.md deploy.md; do
   echo "===== $f ====="; cat "$P/skills/stagent/workflow/$f"; echo
 done
 ````

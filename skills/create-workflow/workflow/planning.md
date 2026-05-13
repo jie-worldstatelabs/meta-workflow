@@ -25,6 +25,8 @@ silently omit schema options they'd want.
 P=$(cat ~/.config/stagent/plugin-root 2>/dev/null)
 [[ -n $P && -d $P/scripts ]] || P=$(ls -d ~/.claude/plugins/cache/*/stagent/*/ 2>/dev/null | head -1)
 cat "$P/skills/create-workflow/workflow/schema-cheatsheet.md"
+echo
+cat "$P/skills/create-workflow/workflow/run_files_catalog.md"
 ```
 
 ## Step 1 — Detect mode and load context

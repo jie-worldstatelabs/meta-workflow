@@ -34,14 +34,18 @@ skills/
       readme.md          ← workflow-level description (rendered on /hub)
       planning.md        ← per-stage instructions
       executing.md
-      verifying.md
       reviewing.md
       qa-ing.md
       deploy.md
-      run_files_catalog.md
   create-workflow/
     SKILL.md             ← interviews the user, designs + writes workflow
                            bundles, validates, publishes to hub
+    workflow/            ← create-workflow's own state-machine + writer
+                           toolkit (schema reference, run_files catalog)
+      schema-cheatsheet.md  ← schema fields + Claude Code runtime
+                              constraints, cat'd by planning and writing
+      run_files_catalog.md  ← run_files patterns + examples, cat'd by
+                              planning and writing
 
 hooks/
   hooks.json             ← wiring: SessionStart, Stop, PreToolUse:Agent,
