@@ -77,16 +77,15 @@ With no `--flow` flag:
 - **Cloud mode** (default) fetches `cloud://demo` from the hub — a hosted template that may evolve independently of this README
 - **Local mode** uses the plugin-bundled workflow at `skills/stagent/workflow/` (offline fallback) — the canonical source for the cycle described below
 
-The bundled workflow runs a **plan → execute → verify → review → QA → deploy** cycle:
+The bundled workflow runs a **plan → execute → review → QA → deploy** cycle:
 
-1. **Planning** *(interruptible)* — inline Q&A with you: clarifying questions, proposed approaches, plan file. You confirm before anything gets built.
-2. **Executing** — subagent (opus) implements the plan: tests-first when specified, minimal focused changes.
-3. **Verifying** — quick tests (unit/integration) run inline. FAIL → loop to Execute; PASS/SKIPPED → Review.
-4. **Reviewing** — subagent runs adversarial code review against the baseline commit. PASS → QA; FAIL → loop to Execute.
-5. **QA-ing** — subagent runs real user journey tests (Playwright, XcodeBuildMCP, etc.). Distinguishes test bugs from app bugs — only confirmed app bugs block progress. PASS → Deploy; FAIL → loop to Execute.
-6. **Deploy** *(interruptible)* — inline Vercel CLI flow: `vercel whoami`, `vercel link` on first run, sync production env vars, `vercel --prod`, smoke-check the URL. Interruptible because first-run setup may need `vercel login` in another terminal or env-var values from you. Done → terminal `complete`.
+1. **Planning** *(interruptible, inline)* — Q&A with you: clarifying questions, proposed approaches, plan file. You confirm before anything gets built.
+2. **Executing** *(subagent, opus)* — implements the plan: tests-first when specified, minimal focused changes. On re-entry, also reads the previous iteration's reviewer / QA feedback as optional inputs.
+3. **Reviewing** *(subagent)* — adversarial code review against the `baseline` git SHA captured at workflow start. PASS → QA; FAIL → loop back to Execute.
+4. **QA-ing** *(subagent)* — runs real user-journey tests (Playwright, XcodeBuildMCP, etc.). Distinguishes test bugs from app bugs — only confirmed app bugs block progress. PASS → Deploy; FAIL → loop back to Execute.
+5. **Deploy** *(interruptible, inline)* — Vercel CLI flow: `vercel whoami`, `vercel link` on first run, sync production env vars, `vercel --prod`, smoke-check the URL. Interruptible because first-run setup may need `vercel login` in another terminal or env-var values from you. Done → terminal `complete`.
 
-The `execute → verify → review → QA` loop runs **autonomously** after you approve the plan. A Stop hook guarantees the loop runs to completion (until QA passes; deploy then runs as the final, interruptible stage). The loop stops on one of: deploy completes (terminal `complete`), `max_epoch` is hit (default `20`, configured in `workflow.json` → `.max_epoch`; breaks runaway iteration by forcing terminal `escalated`), or you intervene with `/stagent:interrupt` (pauses) or `/stagent:cancel` (terminal `cancelled`). All three — `complete`, `escalated`, `cancelled` — are declared in `workflow.json` → `.terminal_stages`.
+The `execute → review → QA` loop runs **autonomously** after you approve the plan. A Stop hook guarantees the loop runs to completion (until QA passes; deploy then runs as the final, interruptible stage). The loop stops on one of: deploy completes (terminal `complete`), `max_epoch` is hit (default `20`, configured in `workflow.json` → `.max_epoch`; breaks runaway iteration by forcing terminal `escalated`), or you intervene with `/stagent:interrupt` (pauses) or `/stagent:cancel` (terminal `cancelled`). All three — `complete`, `escalated`, `cancelled` — are declared in `workflow.json` → `.terminal_stages`.
 
 ## Custom Workflows
 
