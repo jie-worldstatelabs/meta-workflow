@@ -1923,27 +1923,63 @@ cloud_post_activity() {
         tool_input: $input, tool_result: $result, is_error: $is_error,
         is_sidechain: $is_sidechain, agent_id: $agent_id, agent_type: $agent_type,
         event_kind: $event_kind, tool_use_id: $tool_use_id}')" || return 0
-  # Backgrounded so the agent never waits on the network. The subshell
-  # captures curl's exit code + HTTP status and, on any non-2xx or
-  # transport failure (timeout = curl exit 28), appends one diagnostic
-  # line to the same activity-hook log so a lost row is traceable to
-  # its cause (timeout vs HTTP error). Success is NOT logged here —
-  # activity-hook.sh already logged the post= line; we only need to
-  # know about failures.
   local _alog_file="${HOME}/.cache/stagent/activity-hook.log"
+  local _url="${server}/api/sessions/${sid}/activity"
+  local _auth; _auth="$(_cloud_auth_header)"
+
+  if [[ "$event_kind" == "finished" ]]; then
+    # SYNCHRONOUS for the finished event. Root cause of permanently
+    # stuck "pending" rows: a backgrounded/disowned curl is still in
+    # the subagent's process group, so when the subagent (e.g. a
+    # qa-ing stage) exits, CC tears the group down and kills the curl
+    # mid-flight — the finished row never reaches the server and the
+    # webapp's pending row never upgrades. `disown` only blocks
+    # job-control SIGHUP, not a process-group kill, and macOS has no
+    # `setsid` to escape the group. Blocking here until the POST
+    # completes guarantees it lands before the hook (and thus the
+    # subagent) can exit. Cost: a short, bounded wait on PostToolUse
+    # only — the tool already finished, so this delays nothing the
+    # user is watching; correctness of the feed outweighs ~200ms.
+    # One retry covers a transient network blip. Started events stay
+    # fire-and-forget below (a lost "started" is cosmetic — the
+    # synchronous "finished" still renders a complete row).
+    local _try _code _rc
+    for _try in 1 2; do
+      _code="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' \
+        -X POST "$_url" \
+        -H "Content-Type: application/json" \
+        -H "$_auth" \
+        --data "$payload" 2>/dev/null)"
+      _rc=$?
+      case "$_code" in
+        2??) return 0 ;;  # landed — done
+      esac
+      [[ "$_try" == "1" ]] && sleep 1
+    done
+    { printf '%s pid=%s post_result=FAIL kind=finished tuid=%s curl_rc=%s http=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$$" \
+        "${tool_use_id}" "${_rc:-?}" "${_code:-none}" \
+        >> "$_alog_file"; } 2>/dev/null || true
+    return 0
+  fi
+
+  # Started event — fire-and-forget. Backgrounded so the agent never
+  # waits; a lost "started" only costs a momentary missing pending
+  # row, which the synchronous "finished" repairs. The subshell logs
+  # non-2xx / transport failures (timeout = curl exit 28) for tracing.
   (
     code="$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' \
-      -X POST "${server}/api/sessions/${sid}/activity" \
+      -X POST "$_url" \
       -H "Content-Type: application/json" \
-      -H "$(_cloud_auth_header)" \
+      -H "$_auth" \
       --data "$payload" 2>/dev/null)"
     rc=$?
     case "$code" in
-      2??) : ;;  # success — silent
+      2??) : ;;
       *)
-        { printf '%s pid=%s post_result=FAIL kind=%s tuid=%s curl_rc=%s http=%s\n' \
+        { printf '%s pid=%s post_result=FAIL kind=started tuid=%s curl_rc=%s http=%s\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$$" \
-            "${event_kind}" "${tool_use_id}" "$rc" "${code:-none}" \
+            "${tool_use_id}" "$rc" "${code:-none}" \
             >> "$_alog_file"; } 2>/dev/null || true
         ;;
     esac
