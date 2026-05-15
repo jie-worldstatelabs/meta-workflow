@@ -176,4 +176,24 @@ cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
   "finished" "$TOOL_USE_ID"
 _LOG_REASON="posted_finished"
 
+# Clear a permission/idle awaiting state once the agent resumes work.
+# notification-hook.sh sets awaiting_user (reason=permission|idle)
+# when CC blocks on a permission prompt or goes idle. Clicking
+# Allow/Deny does NOT fire UserPromptSubmit and does NOT cause a
+# stage transition — the only two existing clear points — so the
+# "waiting for permission" banner would otherwise never disappear.
+# A finished tool event is definitive proof the agent is working
+# again, so clear here. question|picker reasons are intentionally
+# left untouched: they have their own clear paths (UserPromptSubmit
+# and ask-user-question-hook's PostToolUse:AskUserQuestion).
+if [[ "$(get_awaiting_user "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
+  _AR="$(get_awaiting_reason "$STATE_FILE" 2>/dev/null || true)"
+  if [[ "$_AR" == "permission" || "$_AR" == "idle" ]]; then
+    set_awaiting_user   "$STATE_FILE" false
+    set_awaiting_reason "$STATE_FILE" ""
+    _alog "cleared awaiting (reason=$_AR) on resumed activity tuid=$TOOL_USE_ID"
+    cloud_post_awaiting_user "$CLOUD_SID" false >/dev/null 2>&1 || true
+  fi
+fi
+
 exit 0
