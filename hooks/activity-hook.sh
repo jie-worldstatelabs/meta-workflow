@@ -1,10 +1,17 @@
 #!/bin/bash
-# PostToolUse hook (all tools) — cloud mode activity log.
+# PreToolUse + PostToolUse hook (all tools) — cloud-mode activity log.
 #
-# When a stagent cloud session is active and a stage is running,
-# posts a lightweight tool-use event to the server so the webapp can
-# display a live activity feed. Always fire-and-forget (cloud_post_activity
-# backgrounds the curl) — zero latency impact on the agent.
+# Emits two events per tool call so the webapp can render a pending row
+# the moment a tool starts and upgrade it to "done" when it finishes:
+#   * PreToolUse  → cloud_post_activity ... event_kind=started
+#   * PostToolUse → cloud_post_activity ... event_kind=finished
+# The pair is correlated by tool_use_id (Claude Code provides it on
+# both events). For long-running tools (Bash sleeps, slow MCP calls)
+# this is the difference between a feed that looks dead and one that
+# looks alive.
+#
+# Always fire-and-forget (cloud_post_activity backgrounds the curl) —
+# zero latency impact on the agent.
 #
 # Skipped: non-cloud sessions, no active stage, terminal stages,
 #          and noisy internal tools (TodoWrite, TodoRead, LS).
@@ -28,6 +35,8 @@ TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // ""' 2>/dev/null || true)
 case "$TOOL" in
   TodoWrite|TodoRead|LS) exit 0 ;;
 esac
+
+EVENT_NAME=$(echo "$HOOK_INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null || true)
 
 # Read current stage from shadow state.md
 SHADOW_DIR="$(cloud_registry_get "$SID" scratch_dir)"
@@ -53,7 +62,8 @@ case "$STAGE" in
   complete|cancelled|archived|interrupted) exit 0 ;;
 esac
 
-# Extract a one-line summary from tool_input
+# Extract a one-line summary from tool_input — same shape regardless
+# of which hook fired (tool_input is present in both Pre/PostToolUse).
 INPUT=$(echo "$HOOK_INPUT" | jq -r '.tool_input // {}' 2>/dev/null || echo "{}")
 
 case "$TOOL" in
@@ -94,11 +104,32 @@ case "$TOOL" in
     ;;
 esac
 
-# Extract the full tool_input + tool_response (Claude Code passes both
-# in PostToolUse hook input) so the webapp can show a drill-down pane
-# for every event, not just a one-line summary. Also derive a simple
-# is_error flag so failing steps can be visually flagged.
+# tool_use_id is present on BOTH PreToolUse and PostToolUse payloads
+# in Claude Code; the webapp uses it to pair the started/finished
+# rows so the pending row gets upgraded in place rather than rendered
+# twice. Empty when CC didn't supply it (older versions) — webapp
+# degrades to inserting a fresh row.
+TOOL_USE_ID=$(echo "$HOOK_INPUT" | jq -r '.tool_use_id // ""' 2>/dev/null || true)
+
 TOOL_INPUT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_input // null' 2>/dev/null || echo "null")
+
+# Sidechain identity: when this hook fires inside a subagent, Claude
+# Code sets is_sidechain=true and adds agent_id / agent_type top-level
+# fields. Same shape on Pre and Post.
+IS_SIDECHAIN=$(echo "$HOOK_INPUT" | jq -r '.is_sidechain // false' 2>/dev/null || echo "false")
+AGENT_ID=$(echo "$HOOK_INPUT" | jq -r '.agent_id // ""' 2>/dev/null || true)
+AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null || true)
+
+if [[ "$EVENT_NAME" == "PreToolUse" ]]; then
+  # Started event — no tool_response, no is_error yet.
+  cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
+    "$TOOL_INPUT_JSON" "null" "false" \
+    "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
+    "started" "$TOOL_USE_ID"
+  exit 0
+fi
+
+# PostToolUse — finished event. Includes tool_response + is_error.
 TOOL_RESULT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_response // null' 2>/dev/null || echo "null")
 
 # Error heuristic: prefer the explicit is_error field Claude Code
@@ -111,17 +142,9 @@ IS_ERROR=$(echo "$HOOK_INPUT" | jq -r '
   else "false" end
 ' 2>/dev/null || echo "false")
 
-# Sidechain identity: when this PostToolUse fires inside a subagent,
-# Claude Code sets is_sidechain=true and adds agent_id / agent_type
-# top-level fields (per https://code.claude.com/docs/en/hooks.md).
-# Older CC versions may not set these — we fall back to false / ""
-# so the row still posts cleanly and the webapp degrades gracefully.
-IS_SIDECHAIN=$(echo "$HOOK_INPUT" | jq -r '.is_sidechain // false' 2>/dev/null || echo "false")
-AGENT_ID=$(echo "$HOOK_INPUT" | jq -r '.agent_id // ""' 2>/dev/null || true)
-AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null || true)
-
 cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
   "$TOOL_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR" \
-  "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE"
+  "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
+  "finished" "$TOOL_USE_ID"
 
 exit 0

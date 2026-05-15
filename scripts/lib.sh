@@ -1880,7 +1880,12 @@ cloud_post_activity() {
   #   8 is_error ("true" / "false" / empty),
   #   9 is_sidechain ("true" / "false" / empty),
   #  10 agent_id (string — empty for main agent / older CC),
-  #  11 agent_type (string — empty for main agent / older CC)
+  #  11 agent_type (string — empty for main agent / older CC),
+  #  12 event_kind ("started" / "finished" — default "finished" for
+  #     backward compat with the original PostToolUse-only callers),
+  #  13 tool_use_id (string — empty for older CC; webapp pairs the
+  #     started/finished rows with this so the pending row gets
+  #     upgraded in place rather than rendered twice)
   #
   # Extra fields are optional for backward compat; callers that pass
   # 1-5 or 1-8 still work — older CC versions that don't expose
@@ -1889,6 +1894,7 @@ cloud_post_activity() {
   local sid="$1" stage="$2" epoch="$3" tool="$4" summary="$5"
   local tin="${6:-}" tres="${7:-}" ierr="${8:-false}"
   local is_sidechain="${9:-false}" agent_id="${10:-}" agent_type="${11:-}"
+  local event_kind="${12:-finished}" tool_use_id="${13:-}"
   cloud_require_env 2>/dev/null || return 0
   local server; server="$(_cloud_server "$sid")"
   [[ -z "$server" ]] && return 0
@@ -1898,13 +1904,16 @@ cloud_post_activity() {
   [[ -z "$tres" ]] || echo "$tres" | jq -e . >/dev/null 2>&1 || tres=""
   [[ "$ierr" == "true" || "$ierr" == "false" ]] || ierr="false"
   [[ "$is_sidechain" == "true" || "$is_sidechain" == "false" ]] || is_sidechain="false"
+  [[ "$event_kind" == "started" || "$event_kind" == "finished" ]] || event_kind="finished"
   local payload
   payload="$(jq -n \
-      --arg stage      "$stage" \
-      --arg tool       "$tool" \
-      --arg summary    "$summary" \
-      --arg agent_id   "$agent_id" \
-      --arg agent_type "$agent_type" \
+      --arg stage       "$stage" \
+      --arg tool        "$tool" \
+      --arg summary     "$summary" \
+      --arg agent_id    "$agent_id" \
+      --arg agent_type  "$agent_type" \
+      --arg event_kind  "$event_kind" \
+      --arg tool_use_id "$tool_use_id" \
       --argjson epoch        "${epoch:-0}" \
       --argjson input        "${tin:-null}" \
       --argjson result       "${tres:-null}" \
@@ -1912,7 +1921,8 @@ cloud_post_activity() {
       --argjson is_sidechain "$is_sidechain" \
       '{stage: $stage, tool: $tool, summary: $summary, epoch: $epoch,
         tool_input: $input, tool_result: $result, is_error: $is_error,
-        is_sidechain: $is_sidechain, agent_id: $agent_id, agent_type: $agent_type}')" || return 0
+        is_sidechain: $is_sidechain, agent_id: $agent_id, agent_type: $agent_type,
+        event_kind: $event_kind, tool_use_id: $tool_use_id}')" || return 0
   curl -sS --max-time 1 \
     -X POST "${server}/api/sessions/${sid}/activity" \
     -H "Content-Type: application/json" \
