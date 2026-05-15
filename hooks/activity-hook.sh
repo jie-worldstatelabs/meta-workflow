@@ -15,6 +15,24 @@
 #
 # Skipped: non-cloud sessions, no active stage, terminal stages,
 #          and noisy internal tools (TodoWrite, TodoRead, LS).
+#
+# TELEMETRY LEVEL (STAGENT_TELEMETRY_LEVEL env var)
+# -------------------------------------------------
+#   summary (default) — strips tool_input / tool_result from the payload
+#                        sent to the server. Only stage, tool name, one-line
+#                        summary, is_error, agent_id, tool_use_id reach
+#                        the server. Prevents raw file contents, Bash
+#                        stdout, and API responses from leaving the local
+#                        machine.
+#   full              — opt-in to original behavior: sends full tool_input
+#                        and tool_result. Use only when the server is
+#                        trusted and the codebase is not sensitive.
+#
+# SENSITIVE TOOLS (Read, Write, Edit, MultiEdit, Bash)
+# ----------------------------------------------------
+# tool_input and tool_result are ALWAYS stripped unless
+# STAGENT_TELEMETRY_LEVEL=full. These tools routinely emit file contents
+# or command output that may contain secrets, PII, or proprietary code.
 
 set -euo pipefail
 
@@ -38,9 +56,6 @@ _alog() {
     printf '%s pid=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$$" "$*" \
       >> "$ACTIVITY_LOG"; } 2>/dev/null || true
 }
-# Log the final outcome no matter how the script exits (early-return
-# guards, set -e abort, or normal completion). Populated as we learn
-# the values; trap fires once on EXIT.
 _LOG_TOOL=""; _LOG_TUID=""; _LOG_EVENT=""; _LOG_STAGE=""; _LOG_REASON="enter"
 trap '_alog "exit=$? event=${_LOG_EVENT:-?} tool=${_LOG_TOOL:-?} tuid=${_LOG_TUID:-?} stage=${_LOG_STAGE:-?} reason=${_LOG_REASON}"' EXIT
 
@@ -53,7 +68,6 @@ TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // ""' 2>/dev/null || true)
 _LOG_TOOL="$TOOL"
 if [[ -z "$TOOL" ]]; then _LOG_REASON="no_tool"; exit 0; fi
 
-# Skip internal / noisy tools
 case "$TOOL" in
   TodoWrite|TodoRead|LS) _LOG_REASON="skip_noisy"; exit 0 ;;
 esac
@@ -61,7 +75,6 @@ esac
 EVENT_NAME=$(echo "$HOOK_INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null || true)
 _LOG_EVENT="$EVENT_NAME"
 
-# Read current stage from shadow state.md
 SHADOW_DIR="$(cloud_registry_get "$SID" scratch_dir)"
 [[ -z "$SHADOW_DIR" ]] && SHADOW_DIR="${CLOUD_SCRATCH_BASE}/${SID}"
 STATE_FILE="${SHADOW_DIR}/state.md"
@@ -73,21 +86,13 @@ if [[ -z "$STAGE" ]]; then _LOG_REASON="no_stage"; exit 0; fi
 
 EPOCH=$(_read_fm_field "$STATE_FILE" epoch)
 
-# Takeover aliasing: Claude Code's session_id ($SID) is the local CC
-# session, which in a takeover may differ from the cloud server-side
-# session_id. The cloud server keys rows by the server-side id, so
-# posting to /api/sessions/<local-SID>/activity 404s. state.md's
-# frontmatter always carries the canonical cloud session_id — use it.
 CLOUD_SID=$(_read_fm_field "$STATE_FILE" session_id)
 [[ -z "$CLOUD_SID" ]] && CLOUD_SID="$SID"
 
-# Skip known terminal statuses
 case "$STAGE" in
   complete|cancelled|archived|interrupted) _LOG_REASON="terminal_stage"; exit 0 ;;
 esac
 
-# Extract a one-line summary from tool_input — same shape regardless
-# of which hook fired (tool_input is present in both Pre/PostToolUse).
 INPUT=$(echo "$HOOK_INPUT" | jq -r '.tool_input // {}' 2>/dev/null || echo "{}")
 
 case "$TOOL" in
@@ -111,11 +116,6 @@ case "$TOOL" in
   Agent)
     SUMMARY=$(echo "$INPUT" | jq -r '.subagent_type // .description // ""' 2>/dev/null \
               | cut -c1-80 || true)
-    # Prompt capture happens in agent-guard.sh (PreToolUse) — posting
-    # it here would be delayed until the subagent returns, which for
-    # long stages can mean the webapp shows "No prompt captured" for
-    # the entire run. Keep this branch to just emit the activity-feed
-    # summary above.
     ;;
   WebSearch)
     SUMMARY=$(echo "$INPUT" | jq -r '.query // ""' 2>/dev/null || true)
@@ -128,64 +128,67 @@ case "$TOOL" in
     ;;
 esac
 
-# tool_use_id is present on BOTH PreToolUse and PostToolUse payloads
-# in Claude Code; the webapp uses it to pair the started/finished
-# rows so the pending row gets upgraded in place rather than rendered
-# twice. Empty when CC didn't supply it (older versions) — webapp
-# degrades to inserting a fresh row.
 TOOL_USE_ID=$(echo "$HOOK_INPUT" | jq -r '.tool_use_id // ""' 2>/dev/null || true)
 _LOG_TUID="$TOOL_USE_ID"
 
-TOOL_INPUT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_input // null' 2>/dev/null || echo "null")
+# ── Telemetry scoping ─────────────────────────────────────────────────────
+# Default: strip tool_input and tool_result from the cloud payload.
+# export STAGENT_TELEMETRY_LEVEL=full to restore original behavior.
+# Sensitive tool class is ALWAYS stripped at summary level.
+TELEMETRY_LEVEL="${STAGENT_TELEMETRY_LEVEL:-summary}"
 
-# Sidechain identity: when this hook fires inside a subagent, Claude
-# Code sets is_sidechain=true and adds agent_id / agent_type top-level
-# fields. Same shape on Pre and Post.
+IS_SENSITIVE=false
+case "$TOOL" in
+  Read|Write|Edit|MultiEdit|Bash) IS_SENSITIVE=true ;;
+esac
+
+if [[ "$TELEMETRY_LEVEL" == "full" ]]; then
+  SCOPED_INPUT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_input // null' 2>/dev/null || echo "null")
+else
+  if [[ "$IS_SENSITIVE" == "true" ]]; then
+    SCOPED_INPUT_JSON="null"
+  else
+    SCOPED_INPUT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_input // null' 2>/dev/null || echo "null")
+  fi
+fi
+
 IS_SIDECHAIN=$(echo "$HOOK_INPUT" | jq -r '.is_sidechain // false' 2>/dev/null || echo "false")
 AGENT_ID=$(echo "$HOOK_INPUT" | jq -r '.agent_id // ""' 2>/dev/null || true)
 AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null || true)
 
 if [[ "$EVENT_NAME" == "PreToolUse" ]]; then
-  # Started event — no tool_response, no is_error yet.
-  _alog "post=started tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID summary_len=${#SUMMARY}"
+  _alog "post=started tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID summary_len=${#SUMMARY} telemetry=$TELEMETRY_LEVEL sensitive=$IS_SENSITIVE"
   cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
-    "$TOOL_INPUT_JSON" "null" "false" \
+    "$SCOPED_INPUT_JSON" "null" "false" \
     "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
     "started" "$TOOL_USE_ID"
   _LOG_REASON="posted_started"
   exit 0
 fi
 
-# PostToolUse — finished event. Includes tool_response + is_error.
-TOOL_RESULT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_response // null' 2>/dev/null || echo "null")
+# PostToolUse — finished event. Compute scoped result payload.
+if [[ "$TELEMETRY_LEVEL" == "full" ]]; then
+  TOOL_RESULT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_response // null' 2>/dev/null || echo "null")
+else
+  # Strip result at summary level — carries tool output which for
+  # Read/Bash/Write may contain file contents or shell stdout.
+  TOOL_RESULT_JSON="null"
+fi
 
-# Error heuristic: prefer the explicit is_error field Claude Code
-# sets on most tool responses; for Bash, also treat a non-zero
-# exit_code as an error since Claude Code doesn't always set is_error
-# for shell commands. Missing fields → not an error.
 IS_ERROR=$(echo "$HOOK_INPUT" | jq -r '
   if (.tool_response.is_error // false) == true then "true"
   elif (.tool_name == "Bash" and ((.tool_response.exit_code // 0) != 0)) then "true"
   else "false" end
 ' 2>/dev/null || echo "false")
 
-_alog "post=finished tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID is_error=$IS_ERROR result_len=${#TOOL_RESULT_JSON}"
+_alog "post=finished tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID is_error=$IS_ERROR result_len=${#TOOL_RESULT_JSON} telemetry=$TELEMETRY_LEVEL sensitive=$IS_SENSITIVE"
 cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
-  "$TOOL_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR" \
+  "$SCOPED_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR" \
   "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
   "finished" "$TOOL_USE_ID"
 _LOG_REASON="posted_finished"
 
 # Clear a permission/idle awaiting state once the agent resumes work.
-# notification-hook.sh sets awaiting_user (reason=permission|idle)
-# when CC blocks on a permission prompt or goes idle. Clicking
-# Allow/Deny does NOT fire UserPromptSubmit and does NOT cause a
-# stage transition — the only two existing clear points — so the
-# "waiting for permission" banner would otherwise never disappear.
-# A finished tool event is definitive proof the agent is working
-# again, so clear here. question|picker reasons are intentionally
-# left untouched: they have their own clear paths (UserPromptSubmit
-# and ask-user-question-hook's PostToolUse:AskUserQuestion).
 if [[ "$(get_awaiting_user "$STATE_FILE" 2>/dev/null)" == "true" ]]; then
   _AR="$(get_awaiting_reason "$STATE_FILE" 2>/dev/null || true)"
   if [[ "$_AR" == "permission" || "$_AR" == "idle" ]]; then
