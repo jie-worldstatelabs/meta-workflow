@@ -75,8 +75,18 @@ if [[ "$CURRENT" == "$TARGET" ]]; then
 fi
 
 set_awaiting_user "$STATE_FILE" "$TARGET"
+# Pair the boolean with the reason tag so the webapp can show "agent
+# is waiting on a picker answer" instead of the generic copy. When
+# clearing (PostToolUse), pass "" so the reason is wiped too.
+if [[ "$TARGET" == "true" ]]; then
+  set_awaiting_reason "$STATE_FILE" picker
+else
+  set_awaiting_reason "$STATE_FILE" ""
+fi
 if is_cloud_session "$RUN_DIR_NAME" 2>/dev/null; then
-  cloud_post_awaiting_user "$RUN_DIR_NAME" "$TARGET" >/dev/null 2>&1 || true
+  cloud_post_awaiting_user "$RUN_DIR_NAME" "$TARGET" \
+    "$([[ "$TARGET" == "true" ]] && echo picker || echo "")" \
+    >/dev/null 2>&1 || true
 
   # On PreToolUse only: piggy-back the artifact-reconcile that
   # stop-hook.sh runs at every turn-end (lib.sh: cloud_reconcile_state).

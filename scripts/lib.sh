@@ -113,6 +113,28 @@ set_awaiting_user() {
   set_fm_field "$file" awaiting_user "$value"
 }
 
+# awaiting_reason — a short tag explaining WHY the agent paused.
+# One of: question | picker | permission | idle | "" (cleared).
+#   • question   — agent ended its turn in chat with a question
+#                  (Stop hook on an interruptible stage).
+#   • picker     — agent invoked the AskUserQuestion picker tool.
+#   • permission — Claude Code framework blocked a tool call pending
+#                  user permission (Notification hook).
+#   • idle       — Claude Code was idle waiting for user input long
+#                  enough to fire its native idle notification.
+# Always paired with awaiting_user: when awaiting_user=false the
+# reason is cleared too, so the webapp can read either field
+# independently and never get a stale tag.
+get_awaiting_reason() {
+  local file="$1"
+  _read_fm_field "$file" awaiting_reason
+}
+
+set_awaiting_reason() {
+  local file="$1" value="${2:-}"
+  set_fm_field "$file" awaiting_reason "$value"
+}
+
 # ──────────────────────────────────────────────────────────────
 # bootstrap_completed_at — "the stagent skill driver has engaged
 # this state.md at least once."
@@ -1306,17 +1328,26 @@ cloud_post_state() {
 # (which would mean recomputing active/project_root/fingerprint every
 # time the stop hook fires).
 cloud_post_awaiting_user() {
-  local sid="$1" awaiting="$2"
+  local sid="$1" awaiting="$2" reason="${3:-}"
   cloud_require_env || return 1
   # Coerce to JSON boolean literal.
   case "$awaiting" in
     true|TRUE|1|yes) awaiting=true ;;
     *)               awaiting=false ;;
   esac
+  # When clearing, always clear the reason too so a stale tag can't
+  # outlive the boolean. When setting true with no reason supplied,
+  # leave the field absent — caller stayed silent on purpose.
   local payload
-  payload="$(jq -n --argjson a "$awaiting" '{awaiting_user: $a}')"
+  if [[ "$awaiting" == "false" ]]; then
+    payload="$(jq -n '{awaiting_user: false, awaiting_reason: ""}')"
+  elif [[ -n "$reason" ]]; then
+    payload="$(jq -n --argjson a true --arg r "$reason" '{awaiting_user: $a, awaiting_reason: $r}')"
+  else
+    payload="$(jq -n --argjson a true '{awaiting_user: $a}')"
+  fi
   if ! _cloud_post_json "${STAGENT_SERVER}/api/sessions/${sid}/state" "$payload"; then
-    _cloud_warn "$sid" "cloud_post_awaiting_user failed: awaiting=${awaiting}"
+    _cloud_warn "$sid" "cloud_post_awaiting_user failed: awaiting=${awaiting} reason=${reason}"
     return 1
   fi
   return 0

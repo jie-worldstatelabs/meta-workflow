@@ -197,9 +197,10 @@ if config_is_interruptible "$STATUS"; then
   # the user types anything (UserPromptSubmit hook) or update-status.sh
   # advances the stage.
   if [[ "$(get_awaiting_user "$STATE_FILE")" != "true" ]]; then
-    set_awaiting_user "$STATE_FILE" true
+    set_awaiting_user   "$STATE_FILE" true
+    set_awaiting_reason "$STATE_FILE" question
     if is_cloud_session "$RUN_DIR_NAME"; then
-      cloud_post_awaiting_user "$RUN_DIR_NAME" true >/dev/null 2>&1 || true
+      cloud_post_awaiting_user "$RUN_DIR_NAME" true question >/dev/null 2>&1 || true
     fi
   fi
 

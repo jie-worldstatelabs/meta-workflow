@@ -36,7 +36,8 @@ if [[ "$(get_awaiting_user "$STATE_FILE")" != "true" ]]; then
   exit 0
 fi
 
-set_awaiting_user "$STATE_FILE" false
+set_awaiting_user   "$STATE_FILE" false
+set_awaiting_reason "$STATE_FILE" ""
 if is_cloud_session "$RUN_DIR_NAME" 2>/dev/null; then
   cloud_post_awaiting_user "$RUN_DIR_NAME" false >/dev/null 2>&1 || true
 fi
