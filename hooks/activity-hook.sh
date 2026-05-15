@@ -23,29 +23,53 @@ HOOK_INPUT=$(cat)
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$(dirname "$HOOK_DIR")/scripts/lib.sh"
 
-SID=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""' 2>/dev/null || true)
-[[ -z "$SID" ]] && exit 0
+# ──────────────────────────────────────────────────────────────
+# Diagnostic log. Every invocation appends exactly one line so we
+# can reconstruct, after the fact, which Pre/PostToolUse pairs the
+# webapp never received. Keyed by tool_use_id (the pairing key) so a
+# missing `post=...` finished line for a given tuid pinpoints the
+# lost event. Best-effort: a logging failure must NEVER abort the
+# hook (that would make the diagnostics worse than the bug). The
+# `|| true` + subshell isolation guarantees set -e can't trip here.
+# ──────────────────────────────────────────────────────────────
+ACTIVITY_LOG="${HOME}/.cache/stagent/activity-hook.log"
+_alog() {
+  { mkdir -p "$(dirname "$ACTIVITY_LOG")" 2>/dev/null &&
+    printf '%s pid=%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$$" "$*" \
+      >> "$ACTIVITY_LOG"; } 2>/dev/null || true
+}
+# Log the final outcome no matter how the script exits (early-return
+# guards, set -e abort, or normal completion). Populated as we learn
+# the values; trap fires once on EXIT.
+_LOG_TOOL=""; _LOG_TUID=""; _LOG_EVENT=""; _LOG_STAGE=""; _LOG_REASON="enter"
+trap '_alog "exit=$? event=${_LOG_EVENT:-?} tool=${_LOG_TOOL:-?} tuid=${_LOG_TUID:-?} stage=${_LOG_STAGE:-?} reason=${_LOG_REASON}"' EXIT
 
-is_cloud_session "$SID" || exit 0
+SID=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""' 2>/dev/null || true)
+if [[ -z "$SID" ]]; then _LOG_REASON="no_sid"; exit 0; fi
+
+if ! is_cloud_session "$SID"; then _LOG_REASON="not_cloud"; exit 0; fi
 
 TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // ""' 2>/dev/null || true)
-[[ -z "$TOOL" ]] && exit 0
+_LOG_TOOL="$TOOL"
+if [[ -z "$TOOL" ]]; then _LOG_REASON="no_tool"; exit 0; fi
 
 # Skip internal / noisy tools
 case "$TOOL" in
-  TodoWrite|TodoRead|LS) exit 0 ;;
+  TodoWrite|TodoRead|LS) _LOG_REASON="skip_noisy"; exit 0 ;;
 esac
 
 EVENT_NAME=$(echo "$HOOK_INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null || true)
+_LOG_EVENT="$EVENT_NAME"
 
 # Read current stage from shadow state.md
 SHADOW_DIR="$(cloud_registry_get "$SID" scratch_dir)"
 [[ -z "$SHADOW_DIR" ]] && SHADOW_DIR="${CLOUD_SCRATCH_BASE}/${SID}"
 STATE_FILE="${SHADOW_DIR}/state.md"
-[[ -f "$STATE_FILE" ]] || exit 0
+if [[ ! -f "$STATE_FILE" ]]; then _LOG_REASON="no_state_file"; exit 0; fi
 
 STAGE=$(_read_fm_field "$STATE_FILE" status)
-[[ -z "$STAGE" ]] && exit 0
+_LOG_STAGE="$STAGE"
+if [[ -z "$STAGE" ]]; then _LOG_REASON="no_stage"; exit 0; fi
 
 EPOCH=$(_read_fm_field "$STATE_FILE" epoch)
 
@@ -59,7 +83,7 @@ CLOUD_SID=$(_read_fm_field "$STATE_FILE" session_id)
 
 # Skip known terminal statuses
 case "$STAGE" in
-  complete|cancelled|archived|interrupted) exit 0 ;;
+  complete|cancelled|archived|interrupted) _LOG_REASON="terminal_stage"; exit 0 ;;
 esac
 
 # Extract a one-line summary from tool_input — same shape regardless
@@ -110,6 +134,7 @@ esac
 # twice. Empty when CC didn't supply it (older versions) — webapp
 # degrades to inserting a fresh row.
 TOOL_USE_ID=$(echo "$HOOK_INPUT" | jq -r '.tool_use_id // ""' 2>/dev/null || true)
+_LOG_TUID="$TOOL_USE_ID"
 
 TOOL_INPUT_JSON=$(echo "$HOOK_INPUT" | jq -c '.tool_input // null' 2>/dev/null || echo "null")
 
@@ -122,10 +147,12 @@ AGENT_TYPE=$(echo "$HOOK_INPUT" | jq -r '.agent_type // ""' 2>/dev/null || true)
 
 if [[ "$EVENT_NAME" == "PreToolUse" ]]; then
   # Started event — no tool_response, no is_error yet.
+  _alog "post=started tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID summary_len=${#SUMMARY}"
   cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
     "$TOOL_INPUT_JSON" "null" "false" \
     "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
     "started" "$TOOL_USE_ID"
+  _LOG_REASON="posted_started"
   exit 0
 fi
 
@@ -142,9 +169,11 @@ IS_ERROR=$(echo "$HOOK_INPUT" | jq -r '
   else "false" end
 ' 2>/dev/null || echo "false")
 
+_alog "post=finished tool=$TOOL tuid=$TOOL_USE_ID stage=$STAGE cloud_sid=$CLOUD_SID is_error=$IS_ERROR result_len=${#TOOL_RESULT_JSON}"
 cloud_post_activity "$CLOUD_SID" "$STAGE" "${EPOCH:-0}" "$TOOL" "${SUMMARY:-}" \
   "$TOOL_INPUT_JSON" "$TOOL_RESULT_JSON" "$IS_ERROR" \
   "$IS_SIDECHAIN" "$AGENT_ID" "$AGENT_TYPE" \
   "finished" "$TOOL_USE_ID"
+_LOG_REASON="posted_finished"
 
 exit 0

@@ -1923,12 +1923,31 @@ cloud_post_activity() {
         tool_input: $input, tool_result: $result, is_error: $is_error,
         is_sidechain: $is_sidechain, agent_id: $agent_id, agent_type: $agent_type,
         event_kind: $event_kind, tool_use_id: $tool_use_id}')" || return 0
-  curl -sS --max-time 1 \
-    -X POST "${server}/api/sessions/${sid}/activity" \
-    -H "Content-Type: application/json" \
-    -H "$(_cloud_auth_header)" \
-    --data "$payload" \
-    >/dev/null 2>&1 &
+  # Backgrounded so the agent never waits on the network. The subshell
+  # captures curl's exit code + HTTP status and, on any non-2xx or
+  # transport failure (timeout = curl exit 28), appends one diagnostic
+  # line to the same activity-hook log so a lost row is traceable to
+  # its cause (timeout vs HTTP error). Success is NOT logged here —
+  # activity-hook.sh already logged the post= line; we only need to
+  # know about failures.
+  local _alog_file="${HOME}/.cache/stagent/activity-hook.log"
+  (
+    code="$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' \
+      -X POST "${server}/api/sessions/${sid}/activity" \
+      -H "Content-Type: application/json" \
+      -H "$(_cloud_auth_header)" \
+      --data "$payload" 2>/dev/null)"
+    rc=$?
+    case "$code" in
+      2??) : ;;  # success — silent
+      *)
+        { printf '%s pid=%s post_result=FAIL kind=%s tuid=%s curl_rc=%s http=%s\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$$" \
+            "${event_kind}" "${tool_use_id}" "$rc" "${code:-none}" \
+            >> "$_alog_file"; } 2>/dev/null || true
+        ;;
+    esac
+  ) &
   disown 2>/dev/null || true
   return 0
 }
