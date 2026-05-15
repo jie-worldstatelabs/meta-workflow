@@ -80,6 +80,15 @@ rm -rf "$LEDGER_DIR" 2>/dev/null || true
 set_fm_field "$STATE_FILE" resume_status "$STATUS"
 set_fm_field "$STATE_FILE" status interrupted
 
+# Clear any awaiting-user state. If the agent was paused on a
+# permission prompt / question / picker when the user interrupted,
+# the workflow is now explicitly suspended — the webapp must not keep
+# nagging "waiting for you" on a session the user just paused.
+# update-status.sh clears this on a normal transition; interrupt is
+# the other "stop the current turn" exit and needs the same hygiene.
+set_awaiting_user "$STATE_FILE" false
+set_awaiting_reason "$STATE_FILE" ""
+
 # Record git HEAD at interrupt time so a cross-clone /continue can detect
 # "this workdir is missing the commits the interrupted session produced".
 if _LSH="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)"; then
@@ -91,6 +100,7 @@ if is_cloud_session "$RUN_DIR_NAME"; then
   cloud_post_state "$RUN_DIR_NAME" "interrupted" "${CUR_EPOCH:-1}" "$STATUS" "true" || {
     echo "⚠️  cloud interrupt sync failed" >&2
   }
+  cloud_post_awaiting_user "$RUN_DIR_NAME" false >/dev/null 2>&1 || true
 fi
 
 echo "⏸️  Dev workflow interrupted."
